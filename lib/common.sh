@@ -7,7 +7,6 @@ export PATH="$PR_TOOLS_ROOT/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bi
 
 # Settings: defaults here, overridden by ~/.config/pr-tools/config (see config.example).
 PR_LANGUAGE=English          # language for review comments and thread replies
-PR_FIXED_IN="Fixed in"       # "<this> <sha>." line added to replies on fixed threads
 PR_SKIP_TITLE=               # regex; PRs whose title matches are not reviewed (e.g. ^Release)
 PR_EDITOR=                   # CLI that opens a folder for reviewing fixes (zed, code, cursor); default: first found
 PR_TERMINAL=                 # ghostty or terminal, for interactive sessions; default: ghostty if installed

@@ -5,9 +5,6 @@
 # identifiers and error messages stay in English either way.
 # PR_LANGUAGE=Indonesian
 
-# Line added to a reply when its thread is fixed: "<PR_FIXED_IN> <sha>."
-# PR_FIXED_IN="Diperbaiki di"
-
 # Don't review PRs whose title matches this regex (e.g. big release merges).
 # PR_SKIP_TITLE='^Release'
 

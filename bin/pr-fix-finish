@@ -3,7 +3,7 @@
 #   commit  → commit what's left, push (never forced), then reply + resolve
 #   reply   → I already committed/pushed myself: reply + resolve from the pushed commits
 #   discard → throw the prepared fixes away (worktree removed; in-place changes stashed, not deleted)
-# A thread gets "<PR_FIXED_IN> <sha>." + resolve only when a pushed commit after the prep touched its
+# A thread gets "Fixed in <sha>." + resolve only when a pushed commit after the prep touched its
 # file. After replying the worktree is removed; unpushed leftovers are stashed.
 # usage: pr-fix-finish <pr-url> commit|reply|discard
 source "$(dirname "$0")/../lib/common.sh"
@@ -65,8 +65,8 @@ replied=0
 while read -r t; do
   sha=$(git log -1 --format=%H "$base..$remote" -- "$(jq -r .path <<<"$t")")
   [[ -n $sha ]] || continue
-  printf '%s\n\n%s %s.\n\n<sub>🤖 Fixed with [Claude Code](https://claude.com/claude-code)</sub>\n' \
-    "$(jq -r .reply <<<"$t")" "$PR_FIXED_IN" "$sha" |
+  printf '%s\n\nFixed in %s.\n\n<sub>🤖 Fixed with [Claude Code](https://claude.com/claude-code)</sub>\n' \
+    "$(jq -r .reply <<<"$t")" "$sha" |
     pr-thread-reply "$url" "$(jq -r .id <<<"$t")" --resolve >/dev/null && replied=$((replied + 1))
 done < <(jq -c '.threads[] | select(.kind == "fix")' "$notes")
 open_items=$(jq '[.threads[] | select(.kind != "fix")] | length' "$notes")

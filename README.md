@@ -96,7 +96,6 @@ cp ~/.claude/plugins/cache/pr-tools/pr-tools/*/config.example ~/.config/pr-tools
 | Setting | Default | |
 |---|---|---|
 | `PR_LANGUAGE` | English | Language for review comments and replies |
-| `PR_FIXED_IN` | `Fixed in` | Text before the commit in replies to fixed threads |
 | `PR_SKIP_TITLE` | none | Regex of PR titles not to review, e.g. `^Release` |
 | `PR_EDITOR` | zed, code or cursor | Where prepared fixes open |
 | `PR_TERMINAL` | Ghostty if installed, else Terminal | For interactive sessions |
