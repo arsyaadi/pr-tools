@@ -1,0 +1,32 @@
+#!/bin/bash
+# Post a review on a PR from review JSON on stdin. This is the only write path /pr-review has, and the
+# script (not Claude) decides how it lands:
+#   - someone else's PR → `event` stripped, review stays PENDING until I submit it on GitHub
+#   - my own PR         → submitted right away as COMMENT (GitHub allows nothing else on your own PR)
+# usage: pr-review-post <pr-url> < review.json   ({"commit_id", "body", "comments": [...]})
+set -euo pipefail
+export PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"   # make sure gh/jq are reachable, keep the caller's order
+
+url=${1:?usage: pr-review-post <pr-url> < review.json}
+[[ $url =~ ^https://github\.com/([^/]+)/([^/]+)/pull/([0-9]+)/?$ ]] || { echo "bad PR url: $url" >&2; exit 2; }
+owner=${BASH_REMATCH[1]} repo=${BASH_REMATCH[2]} num=${BASH_REMATCH[3]}
+
+# headless runs pin the target PR; refuse to write anywhere else
+if [[ -n ${PR_REVIEW_URL:-} && ${url%/} != "${PR_REVIEW_URL%/}" ]]; then
+  echo "refusing: $url is not the pinned PR $PR_REVIEW_URL" >&2; exit 3
+fi
+
+json=$(jq -ce 'del(.event) | select((.commit_id | type == "string") and (.body | type == "string"))') ||
+  { echo "invalid review JSON: needs string commit_id and body" >&2; exit 4; }
+
+me=$(gh api user --jq .login)
+author=$(gh api "repos/$owner/$repo/pulls/$num" --jq .user.login)
+[[ $me == "$author" ]] && json=$(jq -c '.event = "COMMENT"' <<<"$json")
+
+resp=$(gh api -X POST "repos/$owner/$repo/pulls/$num/reviews" --input - <<<"$json")
+comments=$(jq '.comments // [] | length' <<<"$json")
+if [[ $me == "$author" ]]; then
+  jq -r --argjson c "$comments" '"self-review posted (\(.state)) with \($c) inline comments: \(.html_url)"' <<<"$resp"
+else
+  jq -r --argjson c "$comments" '"pending review \(.id) (\(.state)) with \($c) inline comments: \(.html_url)"' <<<"$resp"
+fi

@@ -1,0 +1,75 @@
+#!/bin/bash
+# Follow up on fixes pr-fix-prepare made: resume the same Claude session with my feedback, so it
+# revises the uncommitted changes in the same checkout. Still no commit, push or replies here.
+#   (default)      → a dialog asks for the feedback, Claude applies it in the background
+#   --interactive  → a terminal opens the resumed session for a longer back-and-forth
+# usage: pr-fix-followup <pr-url> [--interactive]
+source "$(dirname "$0")/../lib/common.sh"
+url=${1:?usage: pr-fix-followup <pr-url> [--interactive]} mode_arg=${2:-}
+pr_parts "$url"; use_gh_account
+title="PR fix · $repo #$num"
+
+cache=$HOME/.cache/pr-fix key=$repo-$num
+state=$cache/$key.json notes=$cache/$key.notes.json log=$cache/$key.log lock=$cache/$key.running
+fail() { notify "$title" "$1"; echo "$1" >&2; exit 1; }
+
+[[ -e $lock ]] && fail "Busy, try again when the current step finishes"
+[[ -f $state ]] || fail "No prepared fixes for this PR"
+dir=$(jq -r .dir "$state") session=$(jq -r '.session // empty' "$state")
+cd "$dir" || fail "Missing checkout $dir"
+
+# Resume the session that prepared the fixes. If there isn't one, start a fresh session that catches
+# up from the notes file and the current diff, and keep its id.
+catch_up="You prepared uncommitted fixes in this checkout for the review comments on $url, in an earlier session that was not kept. Catch up first: read $notes (each thread and what you did) and run git diff to see the current changes. Keep every existing change unless I say otherwise. Never commit, push or reply on GitHub."
+if [[ -n $session ]]; then
+  session_args=(--resume "$session") intro=
+else
+  session=$(uuidgen | tr '[:upper:]' '[:lower:]')
+  jq --arg s "$session" '.session = $s' "$state" >"$state.tmp" && mv "$state.tmp" "$state"
+  session_args=(--session-id "$session") intro="$catch_up
+
+"
+fi
+
+if [[ $mode_arg == --interactive ]]; then
+  open_terminal "$dir" "$(gh_env_prefix)PR_FIX_URL='$url' claude ${session_args[*]}${intro:+ '$catch_up Then wait for my feedback.'}"
+  exit 0
+fi
+
+feedback=$(osascript -e 'on run a' \
+  -e 'text returned of (display dialog (item 1 of a) default answer "" with title "Follow up with Claude" buttons {"Cancel", "Send"} default button "Send" cancel button "Cancel")' \
+  -e 'end run' "Feedback on the fixes for $repo #$num:" 2>/dev/null) || exit 0
+[[ -n ${feedback//[[:space:]]/} ]] || exit 0
+
+touch "$lock"; trap 'rm -f "$lock"; refresh_menubar' EXIT
+refresh_menubar
+notify "$title" "Applying your follow-up…"
+
+prompt="${intro}Follow-up from me on the fixes you prepared:
+
+$feedback
+
+Apply it to the uncommitted changes in this checkout. Same rules as before: only edit files here, never
+commit, push or reply on GitHub. If a thread's fix or reply changes, update its entry in $notes.
+The last line of your output must start with \"STATUS: \" (e.g. \"STATUS: follow-up applied\")."
+
+# same permissions as the prepare run: edits inside this checkout + the notes file, read-only git
+PR_FIX_URL=$url claude -p "$prompt" "${session_args[@]}" \
+  --settings '{"disableAllHooks":true}' --permission-mode acceptEdits --add-dir "$cache" \
+  --output-format stream-json --verbose \
+  --allowedTools "Bash($PR_TOOLS_ROOT/bin/pr-threads:*)" "Bash($PR_TOOLS_ROOT/bin/pr-tools-config)" \
+    "Bash(git status:*)" "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git blame:*)" \
+  </dev/null >"$cache/$key.followup.jsonl" 2>&1
+{ echo; echo "=== follow-up: $feedback"
+  jq -rs 'map(select(.type == "result"))[-1] | (.result // "no result"), "COST: $\((.total_cost_usd // 0) * 100 | round / 100)",
+    (.permission_denials // [] | .[] | "DENIED: \(.tool_name) \(.tool_input.command // (.tool_input | tostring))")' \
+    "$cache/$key.followup.jsonl" 2>/dev/null; } >>"$log"
+
+status=$(sed -n '/^=== follow-up:/,$p' "$log" | grep -E '^STATUS:' | tail -1 | cut -c9-)
+cost=$(sed -n '/^=== follow-up:/,$p' "$log" | sed -n 's/^COST: //p' | tail -1)
+if [[ -n $status ]]; then
+  open_editor "$dir"
+  notify "$title" "$status: review the diff in your editor${cost:+ ($cost)}"
+else
+  notify "$title" "Follow-up failed. Click for the log." "file://$log"
+fi

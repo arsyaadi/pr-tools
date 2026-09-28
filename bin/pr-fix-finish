@@ -1,0 +1,75 @@
+#!/bin/bash
+# Stage 3 of fixing review comments, after I reviewed Claude's changes:
+#   commit  → commit what's left, push (never forced), then reply + resolve
+#   reply   → I already committed/pushed myself: reply + resolve from the pushed commits
+#   discard → throw the prepared fixes away (worktree removed; in-place changes stashed, not deleted)
+# A thread gets "<PR_FIXED_IN> <sha>." + resolve only when a pushed commit after the prep touched its
+# file. After replying the worktree is removed; unpushed leftovers are stashed.
+# usage: pr-fix-finish <pr-url> commit|reply|discard
+source "$(dirname "$0")/../lib/common.sh"
+url=${1:?usage: pr-fix-finish <pr-url> commit|reply|discard} action=${2:?action}
+pr_parts "$url"; use_gh_account
+export PR_FIX_URL=$url
+title="PR fix · $repo #$num"
+
+cache=$HOME/.cache/pr-fix key=$repo-$num
+state=$cache/$key.json notes=$cache/$key.notes.json lock=$cache/$key.running
+fail() { notify "$title" "$1"; echo "$1" >&2; exit 1; }
+
+[[ -e $lock ]] && fail "Busy, try again when the current step finishes"
+[[ -f $state ]] || fail "No prepared fixes for this PR"
+for k in dir mode clone branch base; do printf -v "$k" '%s' "$(jq -r ".$k" "$state")"; done
+touch "$lock"; trap 'rm -f "$lock"; refresh_menubar' EXIT
+cd "$dir" || fail "Missing checkout $dir"
+
+cleanup() {   # after replying: drop our worktree (leftover edits are stashed, not lost) and the state
+  leftovers=
+  if [[ $mode == worktree ]]; then
+    if [[ -n $(git status --porcelain) ]]; then
+      git stash push --include-untracked --quiet -m "pr-fix leftovers $repo#$num" && leftovers=1
+    fi
+    cd "$clone" && git worktree remove --force "$dir"
+  fi
+  rm -f "$state" "$notes"   # inplace mode: your own checkout stays as it is
+}
+
+case $action in
+  discard)
+    if [[ $mode == worktree ]]; then
+      git -C "$clone" worktree remove --force "$dir" || fail "git worktree remove failed"
+      # prep only reset this branch when it had no unpushed work, so moving it back to origin loses nothing
+      git -C "$clone" branch -f "$branch" "origin/$branch" 2>/dev/null
+    elif [[ -n $(git status --porcelain) ]]; then
+      git stash push --include-untracked --quiet -m "pr-fix discard $repo#$num" || fail "git stash failed"
+    fi
+    rm -f "$state" "$notes"
+    notify "$title" "Fixes discarded$([[ $mode == inplace ]] && echo ' (stashed in your checkout)')"
+    exit 0 ;;
+  commit)
+    if [[ -n $(git status --porcelain) ]]; then
+      git add -A && git commit --quiet -m "$(jq -r '.commit_message // "fix: address review comments"' "$notes" 2>/dev/null)" ||
+        fail "git commit failed"
+    fi
+    git push --quiet origin "HEAD:refs/heads/$branch" 2>/dev/null ||
+      fail "Push rejected (the branch moved on GitHub?). Pull, then use Reply after pushing yourself." ;;
+  reply) ;;
+  *) fail "unknown action: $action" ;;
+esac
+
+git fetch origin "$branch" --quiet || fail "git fetch failed"
+remote=$(git rev-parse "origin/$branch")
+[[ $remote != "$base" ]] || fail "Nothing pushed since the fixes were prepared"
+git merge-base --is-ancestor "$base" "$remote" || fail "origin/$branch was rewritten (force-push?); reply by hand"
+
+replied=0
+while read -r t; do
+  sha=$(git log -1 --format=%H "$base..$remote" -- "$(jq -r .path <<<"$t")")
+  [[ -n $sha ]] || continue
+  printf '%s\n\n%s %s.\n\n<sub>🤖 Fixed with [Claude Code](https://claude.com/claude-code)</sub>\n' \
+    "$(jq -r .reply <<<"$t")" "$PR_FIXED_IN" "$sha" |
+    pr-thread-reply "$url" "$(jq -r .id <<<"$t")" --resolve >/dev/null && replied=$((replied + 1))
+done < <(jq -c '.threads[] | select(.kind == "fix")' "$notes")
+open_items=$(jq '[.threads[] | select(.kind != "fix")] | length' "$notes")
+
+cleanup
+notify "$title" "Pushed ${remote:0:7}: replied & resolved $replied thread(s)$( ((open_items)) && echo ", $open_items question/skip left for you")$([[ -n $leftovers ]] && echo "; unpushed edits stashed (git stash list)")" "${url%/}/files"

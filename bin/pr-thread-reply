@@ -1,0 +1,30 @@
+#!/bin/bash
+# Reply to a review thread (body on stdin) and optionally resolve it. Only on my own PRs, and only
+# threads that belong to the given PR; PR_FIX_URL (when set) pins the PR.
+# usage: pr-thread-reply <pr-url> <thread-id> [--resolve] < body.md
+set -euo pipefail
+export PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"   # make sure gh/jq are reachable, keep the caller's order
+url=${1:?usage: pr-thread-reply <pr-url> <thread-id> [--resolve]} thread=${2:?thread id} resolve=${3:-}
+[[ $url =~ ^https://github\.com/[^/]+/[^/]+/pull/[0-9]+/?$ ]] || { echo "bad PR url: $url" >&2; exit 2; }
+if [[ -n ${PR_FIX_URL:-} && ${url%/} != "${PR_FIX_URL%/}" ]]; then
+  echo "refusing: $url is not the pinned PR $PR_FIX_URL" >&2; exit 3
+fi
+
+owner=$(gh api graphql -f id="$thread" -f query='
+query($id: ID!) { viewer { login }
+  node(id: $id) { ... on PullRequestReviewThread { pullRequest { url author { login } } } } }' \
+  --jq '[.data.node.pullRequest.url, .data.node.pullRequest.author.login, .data.viewer.login] | @tsv')
+IFS=$'\t' read -r thread_pr pr_author me <<<"$owner"
+[[ ${thread_pr%/} == "${url%/}" ]] || { echo "refusing: thread $thread is not on $url" >&2; exit 3; }
+[[ $pr_author == "$me" ]] || { echo "refusing: $url is not my PR" >&2; exit 3; }
+
+body=$(cat); [[ -n $body ]] || { echo "empty reply body" >&2; exit 4; }
+gh api graphql -f id="$thread" -f body="$body" -f query='
+mutation($id: ID!, $body: String!) {
+  addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $id, body: $body}) { comment { url } } }' \
+  --jq '"replied: \(.data.addPullRequestReviewThreadReply.comment.url)"'
+if [[ $resolve == --resolve ]]; then
+  gh api graphql -f id="$thread" -f query='
+  mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { isResolved } } }' \
+    --jq '"resolved: \(.data.resolveReviewThread.thread.isResolved)"'
+fi

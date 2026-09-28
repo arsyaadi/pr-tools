@@ -1,0 +1,28 @@
+#!/bin/bash
+# Print the local clone of <owner>/<repo>, matched by its origin remote (folder names can differ).
+# PROJECT_DIRS (config) is searched first, in order. Otherwise, or when it has no match, $HOME is
+# scanned; on duplicates the most recently used clone wins. Exit 1 if there's no clone.
+source "$(dirname "$0")/../lib/common.sh"
+want=$(tr '[:upper:]' '[:lower:]' <<<"${1:?usage: pr-review-repo-dir <owner>/<repo>}")
+
+slug_of() {   # git@github.com:o/r.git, git@<ssh-alias>:o/r.git, https://github.com/o/r(.git) → o/r
+  git -C "$1" remote get-url origin 2>/dev/null | sed -E 's#^(https?://[^/]+/|[^@]+@[^:]+:)##; s#\.git$##' |
+    tr '[:upper:]' '[:lower:]'
+}
+
+for root in "${PROJECT_DIRS[@]}"; do
+  for d in "$root"/*/; do
+    [[ -d $d.git && $(slug_of "$d") == "$want" ]] && { echo "${d%/}"; exit 0; }
+  done
+done
+
+# ~0.4s for ~60 repos, so no index/cache; skips app data, dependencies and dot-directories
+best= best_used=0
+while IFS= read -r git_dir; do
+  d=${git_dir%/.git}
+  [[ $(slug_of "$d") == "$want" ]] || continue
+  used=$(stat -f %m "$git_dir/index" 2>/dev/null || stat -c %Y "$git_dir/index" 2>/dev/null || echo 0)
+  (( used > best_used )) && best=$d best_used=$used
+done < <(find "$HOME" -maxdepth 5 \( -name Library -o -name node_modules -o -name vendor -o -name .Trash \
+  -o -name Applications -o \( -name '.*' -not -name .git \) \) -prune -o -type d -name .git -print 2>/dev/null)
+[[ -n $best ]] && echo "$best" || exit 1

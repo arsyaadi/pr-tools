@@ -1,0 +1,26 @@
+#!/bin/bash
+# Read-only: PR info + unresolved review threads as JSON. The GraphQL query is fixed here, so this
+# can't mutate anything (unlike a raw `gh api graphql`, which could).
+# usage: pr-threads <pr-url>
+set -euo pipefail
+export PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"   # make sure gh/jq are reachable, keep the caller's order
+url=${1:?usage: pr-threads <pr-url>}
+[[ $url =~ ^https://github\.com/([^/]+)/([^/]+)/pull/([0-9]+)/?$ ]] || { echo "bad PR url: $url" >&2; exit 2; }
+
+gh api graphql -F owner="${BASH_REMATCH[1]}" -F repo="${BASH_REMATCH[2]}" -F num="${BASH_REMATCH[3]}" -f query='
+query($owner: String!, $repo: String!, $num: Int!) {
+  viewer { login }
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $num) {
+      url state author { login } headRefName headRefOid baseRefName
+      reviewThreads(first: 100) { nodes {
+        id isResolved isOutdated path line originalLine
+        comments(first: 50) { nodes { author { login } body url } }
+      } }
+    }
+  }
+}' --jq '.data.viewer.login as $me | .data.repository.pullRequest |
+  {url, state, author: .author.login, mine: (.author.login == $me), headRefName, headRefOid, baseRefName,
+   threads: [.reviewThreads.nodes[] | select(.isResolved | not) |
+     {id, isOutdated, path, line: (.line // .originalLine),
+      comments: [.comments.nodes[] | {author: .author.login, body, url}]}]}'

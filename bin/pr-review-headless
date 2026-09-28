@@ -1,0 +1,43 @@
+#!/bin/bash
+# Headless /pr-tools:pr-review: Claude drafts the review in the background, then a notification
+# (click → PR files tab). Its only write path is pr-review-post, pinned to this PR.
+# usage: pr-review-headless <pr-url>
+source "$(dirname "$0")/../lib/common.sh"
+url=${1:?usage: pr-review-headless <pr-url>}; pr_parts "$url"; use_gh_account
+title="PR review · $repo #$num"
+
+state=$HOME/.cache/pr-review; mkdir -p "$state"
+find "$state" -maxdepth 1 -type f \( -name '*.log' -o -name '*.jsonl' \) -mtime +30 -delete 2>/dev/null
+log=$state/$repo-$num.log lock=$state/$repo-$num.running
+[[ -e $lock ]] && { notify "$title" "Already running"; exit 0; }
+touch "$lock"; trap 'rm -f "$lock"; refresh_menubar' EXIT
+refresh_menubar
+notify "$title" "Reviewing in the background…"
+
+# run inside the local clone so git history works
+dir=$(pr-review-repo-dir "$slug") || dir=$HOME   # `cd ""` would silently stay put
+cd "$dir"
+# Read-only gh/git plus the pinned review poster; anything else is denied in -p mode.
+# disableAllHooks: user hooks (e.g. command rewriters) would break the allow rules.
+PR_REVIEW_URL=$url claude -p "/pr-tools:pr-review $url --headless" --no-session-persistence \
+  --settings '{"disableAllHooks":true}' --output-format stream-json --verbose \
+  --allowedTools "Bash($PR_TOOLS_ROOT/bin/pr-review-post:*)" "Bash($PR_TOOLS_ROOT/bin/pr-tools-config)" \
+    "Bash(gh pr view:*)" "Bash(gh pr diff:*)" "Bash(gh repo view:*)" "Bash(gh api user:*)" \
+    "Bash(git fetch:*)" "Bash(git blame:*)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git diff:*)" \
+    "Bash(git merge-base:*)" "Skill(pr-tools:pr-review)" "Skill(ponytail-review)" "Skill(ponytail:ponytail-review)" \
+  </dev/null >"$state/$repo-$num.jsonl" 2>&1
+rc=$?
+
+# readable log: the final answer, cost, then every denied tool call (full trace stays in the .jsonl)
+jq -rs 'map(select(.type == "result"))[-1] | (.result // "no result (see .jsonl)"),
+  "COST: $\((.total_cost_usd // 0) * 100 | round / 100)",
+  (.permission_denials // [] | .[] | "DENIED: \(.tool_name) \(.tool_input.command // (.tool_input | tostring))")' \
+  "$state/$repo-$num.jsonl" >"$log" 2>/dev/null || cp "$state/$repo-$num.jsonl" "$log"
+
+status=$(grep -E '^STATUS:' "$log" | tail -1 | cut -c9-)
+cost=$(sed -n 's/^COST: //p' "$log" | tail -1)
+if [[ -n $status ]]; then
+  notify "$title" "$status${cost:+ ($cost)}" "${url%/}/files"
+else
+  notify "$title" "Failed (exit $rc). Click for the log." "file://$log"
+fi

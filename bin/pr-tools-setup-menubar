@@ -1,0 +1,56 @@
+#!/bin/bash
+# Install (or repair) the pr-tools SwiftBar menu bar: writes a small shim into SwiftBar's plugin folder
+# that runs the currently installed plugin version, then checks the requirements. Safe to re-run.
+source "$(dirname "$0")/../lib/common.sh"
+ok() { echo "  ok    $*"; }
+todo() { echo "  todo  $*"; }
+
+[[ $(uname) == Darwin ]] || { echo "The menu bar needs macOS (SwiftBar). /pr-tools:pr-review and /pr-tools:pr-fix work without it."; exit 1; }
+[[ -d /Applications/SwiftBar.app ]] || { echo "SwiftBar isn't installed: brew install --cask swiftbar, then run this again."; exit 1; }
+
+dir=$(defaults read com.ameba.SwiftBar PluginDirectory 2>/dev/null)
+if [[ -z $dir ]]; then
+  dir=$HOME/.config/swiftbar
+  defaults write com.ameba.SwiftBar PluginDirectory "$dir"
+  echo "SwiftBar had no plugin folder yet; set it to $dir"
+fi
+mkdir -p "$dir"
+shim=$dir/pr-tools.5m.sh
+cat >"$shim" <<'SHIM'
+#!/bin/bash
+# <swiftbar.hideAbout>true</swiftbar.hideAbout>
+# <swiftbar.hideRunInTerminal>true</swiftbar.hideRunInTerminal>
+# <swiftbar.hideLastUpdated>true</swiftbar.hideLastUpdated>
+# <swiftbar.hideDisablePlugin>true</swiftbar.hideDisablePlugin>
+# <swiftbar.hideSwiftBar>true</swiftbar.hideSwiftBar>
+# pr-tools menu bar, installed by /pr-tools:setup-menubar. It runs whichever pr-tools version Claude
+# Code has installed, so plugin updates apply without touching this file.
+export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin
+root=$(jq -r '[.plugins | to_entries[] | select(.key | startswith("pr-tools@")) | .value[]]
+  | sort_by(.scope != "user") | .[0].installPath // empty' "$HOME/.claude/plugins/installed_plugins.json" 2>/dev/null)
+if [[ ! -x $root/swiftbar/github.sh ]]; then
+  echo "PR | sfimage=exclamationmark.triangle"; echo "---"
+  echo "pr-tools plugin not found: reinstall it, then run /pr-tools:setup-menubar"
+  exit 0
+fi
+PR_TOOLS_ROOT=$root exec "$root/swiftbar/github.sh" "$@"
+SHIM
+chmod +x "$shim"
+echo "Installed $shim"
+echo "Requirements:"
+command -v jq >/dev/null && ok "jq" || todo "jq: brew install jq"
+command -v claude >/dev/null && ok "claude" || todo "Claude Code CLI on PATH"
+if command -v gh >/dev/null; then
+  accounts=$(gh auth status --json hosts --jq '[.hosts["github.com"][].login] | join(", ")' 2>/dev/null)
+  [[ -n $accounts ]] && ok "gh, logged in as: $accounts" || todo "gh auth login (once per GitHub account)"
+else
+  todo "gh: brew install gh, then gh auth login"
+fi
+if command -v terminal-notifier >/dev/null; then
+  ok "terminal-notifier (allow it in System Settings → Notifications for clickable notifications)"
+else
+  todo "optional: brew install terminal-notifier for clickable notifications (plain ones work without it)"
+fi
+pgrep -x SwiftBar >/dev/null || { open -a SwiftBar; echo "Started SwiftBar."; }
+open -g "swiftbar://refreshallplugins" 2>/dev/null
+echo "Done: look for the pull request icon in the menu bar. Settings: $PR_TOOLS_ROOT/config.example"

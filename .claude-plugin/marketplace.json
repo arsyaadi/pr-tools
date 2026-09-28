@@ -1,0 +1,12 @@
+{
+  "name": "pr-tools",
+  "owner": { "name": "arsyaadi", "url": "https://github.com/arsyaadi" },
+  "plugins": [
+    {
+      "name": "pr-tools",
+      "source": "./",
+      "description": "Claude reviews GitHub PRs and fixes review comments, with an optional macOS menu bar.",
+      "category": "development"
+    }
+  ]
+}

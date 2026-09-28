@@ -1,0 +1,32 @@
+#!/bin/bash
+# Submit my PENDING review on a PR, keeping the body Claude drafted (GitHub's "Finish your review" box
+# drops it). Asks for confirmation first. Claude's allowlist never includes this: submitting is mine.
+# usage: pr-review-submit <pr-url> APPROVE|COMMENT|REQUEST_CHANGES
+source "$(dirname "$0")/../lib/common.sh"
+set -o pipefail
+url=${1:?usage: pr-review-submit <pr-url> APPROVE|COMMENT|REQUEST_CHANGES} event=${2:?event}
+pr_parts "$url"; use_gh_account
+case $event in APPROVE) label=Approve ;; COMMENT) label=Comment ;; REQUEST_CHANGES) label="Request changes" ;;
+  *) echo "bad event: $event" >&2; exit 2 ;; esac
+title="PR review · $repo #$num"
+
+# pending reviews are only visible to their author, so the PENDING one here is mine
+pending=$(gh api "repos/$owner/$repo/pulls/$num/reviews" --jq '[.[] | select(.state == "PENDING")][0] // empty')
+[[ -n $pending ]] || { notify "$title" "No pending review to submit"; echo "No pending review to submit" >&2; exit 1; }
+id=$(jq -r .id <<<"$pending")
+inline=$(gh api "repos/$owner/$repo/pulls/$num/reviews/$id/comments" --jq length)
+
+question="Submit your review on $repo #$num as \"$label\"? ($inline inline comment(s); once submitted it's visible to everyone)"
+if [[ -t 0 ]]; then
+  read -r -p "$question [y/N] " answer; [[ $answer == [yY]* ]] || exit 0
+else
+  osascript -e 'on run a' -e 'display dialog (item 1 of a) with title "Submit PR review" buttons {"Cancel", "Submit"} default button "Submit" cancel button "Cancel"' \
+    -e 'end run' "$question" >/dev/null 2>&1 || exit 0
+fi
+
+resp=$(jq -n --arg e "$event" --argjson p "$pending" '{event: $e, body: $p.body}' |
+  gh api -X POST "repos/$owner/$repo/pulls/$num/reviews/$id/events" --input - 2>&1) ||
+  { notify "$title" "Submit failed: ${resp:0:100}"; echo "$resp" >&2; exit 1; }
+notify "$title" "Submitted as $label ($inline inline)" "$(jq -r .html_url <<<"$resp")"
+echo "Submitted as $label: $(jq -r .html_url <<<"$resp")"
+refresh_menubar

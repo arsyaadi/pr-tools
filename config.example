@@ -1,0 +1,27 @@
+# pr-tools settings. Copy to ~/.config/pr-tools/config and uncomment what you want to change;
+# everything has a default. The file is sourced by bash.
+
+# Language for review comments, review summaries and replies to review threads. Technical terms,
+# identifiers and error messages stay in English either way.
+# PR_LANGUAGE=Indonesian
+
+# Line added to a reply when its thread is fixed: "<PR_FIXED_IN> <sha>."
+# PR_FIXED_IN="Diperbaiki di"
+
+# Don't review PRs whose title matches this regex (e.g. big release merges).
+# PR_SKIP_TITLE='^Release'
+
+# Where /pr-tools:pr-fix opens the prepared changes for you to review: a CLI that takes a folder.
+# Default: the first of zed, code, cursor; otherwise Finder.
+# PR_EDITOR=zed
+
+# Terminal for interactive sessions: ghostty or terminal. Default: ghostty when installed.
+# PR_TERMINAL=ghostty
+
+# Folders searched first for local clones (in order). Default: scan $HOME for a clone whose origin
+# matches the PR's repo, most recently used first.
+# PROJECT_DIRS=("$HOME/code/work" "$HOME/code/personal")
+
+# gh accounts shown in the menu bar, in this order. Default: every account in `gh auth status`,
+# the active one first.
+# GH_ACCOUNTS=(work-login personal-login)

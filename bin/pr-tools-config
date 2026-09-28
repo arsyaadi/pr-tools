@@ -1,0 +1,4 @@
+#!/bin/bash
+# Print the effective pr-tools settings the commands need (defaults + ~/.config/pr-tools/config).
+source "$(dirname "$0")/../lib/common.sh"
+printf 'language=%s\nskip_title_regex=%s\n' "$PR_LANGUAGE" "$PR_SKIP_TITLE"
