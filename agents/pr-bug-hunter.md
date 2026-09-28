@@ -1,7 +1,6 @@
 ---
 name: pr-bug-hunter
-description: Finds real bugs in a GitHub pull request diff (or via git history of the touched code). Used by the /pr-review command; returns issues with file, new-side line(s), description and reason.
-model: claude-opus-5-5
+description: Finds real bugs in a GitHub pull request diff (or via git history of the touched code). Used by the /pr-review skill; returns issues with file, new-side line(s), description and reason.
 effort: medium
 tools: Bash, Read, Grep, Glob
 ---

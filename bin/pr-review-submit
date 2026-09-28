@@ -1,8 +1,8 @@
 #!/bin/bash
-# Submit my PENDING review on a PR, keeping the body Claude drafted (GitHub's "Finish your review" box
-# drops it). Asks for confirmation first. Claude's allowlist never includes this: submitting is mine.
+# Submit my PENDING review on a PR, keeping the body the agent drafted (GitHub's "Finish your review" box
+# drops it). Asks for confirmation first. No agent's allow list includes this: submitting is mine.
 # usage: pr-review-submit <pr-url> APPROVE|COMMENT|REQUEST_CHANGES
-source "$(dirname "$0")/../lib/common.sh"
+source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"   # $0 may be a symlink in ~/.local/bin
 set -o pipefail
 url=${1:?usage: pr-review-submit <pr-url> APPROVE|COMMENT|REQUEST_CHANGES} event=${2:?event}
 pr_parts "$url"; use_gh_account

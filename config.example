@@ -8,7 +8,7 @@
 # Don't review PRs whose title matches this regex (e.g. big release merges).
 # PR_SKIP_TITLE='^Release'
 
-# Where /pr-tools:pr-fix opens the prepared changes for you to review: a CLI that takes a folder.
+# Where the pr-fix menu action opens the prepared changes for you to review: a CLI that takes a folder.
 # Default: the first of zed, code, cursor; otherwise Finder.
 # PR_EDITOR=zed
 
@@ -22,3 +22,7 @@
 # gh accounts shown in the menu bar, in this order. Default: every account in `gh auth status`,
 # the active one first.
 # GH_ACCOUNTS=(work-login personal-login)
+
+# Agents offered for reviews and fixes in the menu bar, in this order (the first is the default):
+# claude, codex, agy (Antigravity). Default: every one installed.
+# PR_AGENTS=(claude codex)

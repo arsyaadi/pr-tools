@@ -2,7 +2,7 @@
 # Print the local clone of <owner>/<repo>, matched by its origin remote (folder names can differ).
 # PROJECT_DIRS (config) is searched first, in order. Otherwise, or when it has no match, $HOME is
 # scanned; on duplicates the most recently used clone wins. Exit 1 if there's no clone.
-source "$(dirname "$0")/../lib/common.sh"
+source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"   # $0 may be a symlink in ~/.local/bin
 want=$(tr '[:upper:]' '[:lower:]' <<<"${1:?usage: pr-review-repo-dir <owner>/<repo>}")
 
 slug_of() {   # git@github.com:o/r.git, git@<ssh-alias>:o/r.git, https://github.com/o/r(.git) → o/r

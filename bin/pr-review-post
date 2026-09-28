@@ -1,6 +1,6 @@
 #!/bin/bash
 # Post a review on a PR from review JSON on stdin. This is the only write path /pr-review has, and the
-# script (not Claude) decides how it lands:
+# script (not the agent) decides how it lands:
 #   - someone else's PR → `event` stripped, review stays PENDING until I submit it on GitHub
 #   - my own PR         → submitted right away as COMMENT (GitHub allows nothing else on your own PR)
 # usage: pr-review-post <pr-url> < review.json   ({"commit_id", "body", "comments": [...]})

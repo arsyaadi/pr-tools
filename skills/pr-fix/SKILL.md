@@ -1,12 +1,13 @@
 ---
-description: Fix unresolved review comments on your own PR as uncommitted changes (nothing is committed, pushed or replied)
-argument-hint: <pr-url> --notes <path> [--headless]
-model: claude-sonnet-5
+name: pr-fix
+description: Fix unresolved review comments on your own PR as uncommitted changes (nothing is committed, pushed or replied). Run only when the user invokes it with a PR URL.
+argument-hint: "<pr-url> --notes <path> [--headless]"
+disable-model-invocation: true
 effort: medium
-allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/pr-threads:*), Bash(${CLAUDE_PLUGIN_ROOT}/bin/pr-tools-config), Bash(git status:*), Bash(git diff:*), Bash(git log:*), Bash(git show:*), Bash(git blame:*)
+allowed-tools: Bash(pr-threads:*), Bash(pr-tools-config), Bash(git status:*), Bash(git diff:*), Bash(git log:*), Bash(git show:*), Bash(git blame:*)
 ---
 
-Address the unresolved review comments on the pull request in `$ARGUMENTS`. You only edit files in
+Address the unresolved review comments on the pull request given with this skill (its arguments). You only edit files in
 the current directory (a checkout of the PR branch). You never commit, push or reply on GitHub:
 I review your changes in my editor, and `pr-fix-finish` commits/pushes and replies afterwards.
 
@@ -14,8 +15,8 @@ I review your changes in my editor, and `pr-fix-finish` commits/pushes and repli
 
 - Parse the PR URL, the `--notes <path>` file path, and whether `--headless` was passed
   (`--headless`: nobody is watching, never ask).
-- `${CLAUDE_PLUGIN_ROOT}/bin/pr-tools-config` → my settings; `language` is for the replies you draft.
-- `${CLAUDE_PLUGIN_ROOT}/bin/pr-threads <url>` → PR info and the unresolved threads (id, path, line,
+- `pr-tools-config` → my settings; `language` is for the replies you draft.
+- `pr-threads <url>` → PR info and the unresolved threads (id, path, line,
   isOutdated, comments). Stop if the PR isn't mine (`mine: false`) or has no unresolved threads.
 - `git log -1 --format=%H` must equal `headRefOid`; if not, stop and say the checkout is stale.
 

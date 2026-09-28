@@ -1,11 +1,11 @@
 #!/bin/bash
 # Install (or repair) the pr-tools SwiftBar menu bar: writes a small shim into SwiftBar's plugin folder
-# that runs the currently installed plugin version, then checks the requirements. Safe to re-run.
-source "$(dirname "$0")/../lib/common.sh"
+# that runs this pr-tools checkout, then checks the requirements. Safe to re-run (install.sh runs it).
+source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"   # $0 may be a symlink in ~/.local/bin
 ok() { echo "  ok    $*"; }
 todo() { echo "  todo  $*"; }
 
-[[ $(uname) == Darwin ]] || { echo "The menu bar needs macOS (SwiftBar). /pr-tools:pr-review and /pr-tools:pr-fix work without it."; exit 1; }
+[[ $(uname) == Darwin ]] || { echo "The menu bar needs macOS (SwiftBar). /pr-review and /pr-fix work without it."; exit 1; }
 [[ -d /Applications/SwiftBar.app ]] || { echo "SwiftBar isn't installed: brew install --cask swiftbar, then run this again."; exit 1; }
 
 dir=$(defaults read com.ameba.SwiftBar PluginDirectory 2>/dev/null)
@@ -16,30 +16,30 @@ if [[ -z $dir ]]; then
 fi
 mkdir -p "$dir"
 shim=$dir/pr-tools.5m.sh
-cat >"$shim" <<'SHIM'
+cat >"$shim" <<SHIM
 #!/bin/bash
 # <swiftbar.hideAbout>true</swiftbar.hideAbout>
 # <swiftbar.hideRunInTerminal>true</swiftbar.hideRunInTerminal>
 # <swiftbar.hideLastUpdated>true</swiftbar.hideLastUpdated>
 # <swiftbar.hideDisablePlugin>true</swiftbar.hideDisablePlugin>
 # <swiftbar.hideSwiftBar>true</swiftbar.hideSwiftBar>
-# pr-tools menu bar, installed by /pr-tools:setup-menubar. It runs whichever pr-tools version Claude
-# Code has installed, so plugin updates apply without touching this file.
-export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin
-root=$(jq -r '[.plugins | to_entries[] | select(.key | startswith("pr-tools@")) | .value[]]
-  | sort_by(.scope != "user") | .[0].installPath // empty' "$HOME/.claude/plugins/installed_plugins.json" 2>/dev/null)
-if [[ ! -x $root/swiftbar/github.sh ]]; then
+# pr-tools menu bar, installed by pr-tools-setup-menubar. Runs the pr-tools checkout below, so
+# updates (re-running install.sh) apply without touching this file.
+root=$(printf %q "$PR_TOOLS_ROOT")
+if [[ ! -x \$root/swiftbar/github.sh ]]; then
   echo "PR | sfimage=exclamationmark.triangle"; echo "---"
-  echo "pr-tools plugin not found: reinstall it, then run /pr-tools:setup-menubar"
+  echo "pr-tools not found in \$root: re-run install.sh"
   exit 0
 fi
-PR_TOOLS_ROOT=$root exec "$root/swiftbar/github.sh" "$@"
+PR_TOOLS_ROOT=\$root exec "\$root/swiftbar/github.sh" "\$@"
 SHIM
 chmod +x "$shim"
 echo "Installed $shim"
 echo "Requirements:"
 command -v jq >/dev/null && ok "jq" || todo "jq: brew install jq"
-command -v claude >/dev/null && ok "claude" || todo "Claude Code CLI on PATH"
+agents=$(for a in claude codex agy; do command -v $a >/dev/null && printf '%s ' "$(agent_name $a)"; done)
+[[ -n $agents ]] && ok "agents for reviews and fixes: $agents" ||
+  todo "an agent CLI (claude, codex or agy): the menu bar's review and fix actions run on it"
 if command -v gh >/dev/null; then
   accounts=$(gh auth status --json hosts --jq '[.hosts["github.com"][].login] | join(", ")' 2>/dev/null)
   [[ -n $accounts ]] && ok "gh, logged in as: $accounts" || todo "gh auth login (once per GitHub account)"
@@ -53,4 +53,4 @@ else
 fi
 pgrep -x SwiftBar >/dev/null || { open -a SwiftBar; echo "Started SwiftBar."; }
 open -g "swiftbar://refreshallplugins" 2>/dev/null
-echo "Done: look for the pull request icon in the menu bar. Settings: $PR_TOOLS_ROOT/config.example"
+echo "Done: look for the pull request icon in the menu bar. Settings: ~/.config/pr-tools/config"

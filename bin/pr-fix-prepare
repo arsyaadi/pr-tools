@@ -1,12 +1,12 @@
 #!/bin/bash
 # Stage 1 of fixing review comments on my PR: check out the PR branch (own worktree unless it's already
-# checked out cleanly), let Claude edit files there (uncommitted), then open the editor to review.
+# checked out cleanly), let the agent (PR_AGENT) edit files there (uncommitted), then open the editor to review.
 # Nothing is committed, pushed or replied here; that's pr-fix-finish.
 # usage: pr-fix-prepare <pr-url> [--interactive]
-source "$(dirname "$0")/../lib/common.sh"
+source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"   # $0 may be a symlink in ~/.local/bin
 url=${1:?usage: pr-fix-prepare <pr-url> [--interactive]} mode_arg=${2:-}
-pr_parts "$url"; use_gh_account
-title="PR fix · $repo #$num"
+pr_parts "$url"; use_gh_account; require_agent
+title="PR fix · $repo #$num · $(agent_name)"
 
 cache=$HOME/.cache/pr-fix; mkdir -p "$cache"
 find "$cache" -maxdepth 1 -type f \( -name '*.log' -o -name '*.jsonl' \) -mtime +30 -delete 2>/dev/null
@@ -15,7 +15,7 @@ fail() { notify "$title" "$1"; echo "$1" >&2; exit 1; }
 
 [[ -e $lock ]] && fail "Already running"
 [[ -e $state ]] && fail "Fixes already prepared: finish or discard them first"
-touch "$lock"; trap 'rm -f "$lock"; refresh_menubar' EXIT
+agent_name >"$lock"; trap 'rm -f "$lock"; refresh_menubar' EXIT
 refresh_menubar
 
 info=$(pr-threads "$url") || fail "Couldn't load the PR threads"
@@ -40,30 +40,32 @@ else
   dir=$cache/$key mode=worktree
   git -C "$clone" worktree add --quiet --track -B "$branch" "$dir" "origin/$branch" || fail "git worktree add failed"
 fi
-# the Claude session is kept (and its id stored) so pr-fix-followup can resume it with my feedback
-session=$(uuidgen | tr '[:upper:]' '[:lower:]')
-jq -n --arg url "$url" --arg repo "$repo" --arg num "$num" --arg dir "$dir" --arg mode "$mode" \
-  --arg clone "$clone" --arg branch "$branch" --arg base "$(git -C "$dir" rev-parse HEAD)" --arg session "$session" \
-  '{url: $url, repo: $repo, num: $num, dir: $dir, mode: $mode, clone: $clone, branch: $branch, base: $base, session: $session}' >"$state"
+write_state() {   # the agent and its session are kept so pr-fix-followup can resume it with my feedback
+  jq -n --arg url "$url" --arg repo "$repo" --arg num "$num" --arg dir "$dir" --arg mode "$mode" \
+    --arg clone "$clone" --arg branch "$branch" --arg base "$(git -C "$dir" rev-parse HEAD)" \
+    --arg agent "$PR_AGENT" --arg session "$1" \
+    '{url: $url, repo: $repo, num: $num, dir: $dir, mode: $mode, clone: $clone, branch: $branch, base: $base,
+      agent: $agent, session: $session}' >"$state"
+}
 cd "$dir" || fail "cd $dir failed"
+prompt="$(skill pr-fix) $url --notes $notes"
 
 if [[ $mode_arg == --interactive ]]; then
-  open_terminal "$dir" "$(gh_env_prefix)PR_FIX_URL='$url' claude --session-id $session '/pr-tools:pr-fix $url --notes $notes'"
+  # only Claude takes a session id up front; the others get a catch-up session on the first follow-up
+  if [[ $PR_AGENT == claude ]]; then
+    session=$(uuidgen | tr '[:upper:]' '[:lower:]'); cmd="claude --session-id $session $(printf %q "$prompt")"
+  else
+    session=; cmd=$(agent_cli "$prompt")
+  fi
+  write_state "$session"
+  open_terminal "$dir" "$(gh_env_prefix)PR_FIX_URL='$url' $cmd"
   exit 0
 fi
 
-# Headless: file edits only inside this checkout (acceptEdits) + the notes file; read-only git.
-# disableAllHooks: user hooks (e.g. command rewriters) would break the allow rules.
-PR_FIX_URL=$url claude -p "/pr-tools:pr-fix $url --notes $notes --headless" --session-id "$session" \
-  --settings '{"disableAllHooks":true}' --permission-mode acceptEdits --add-dir "$cache" \
-  --output-format stream-json --verbose \
-  --allowedTools "Bash($PR_TOOLS_ROOT/bin/pr-threads:*)" "Bash($PR_TOOLS_ROOT/bin/pr-tools-config)" \
-    "Bash(git status:*)" "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git blame:*)" \
-    "Skill(pr-tools:pr-fix)" \
-  </dev/null >"$cache/$key.jsonl" 2>&1
-jq -rs 'map(select(.type == "result"))[-1] | (.result // "no result"), "COST: $\((.total_cost_usd // 0) * 100 | round / 100)",
-  (.permission_denials // [] | .[] | "DENIED: \(.tool_name) \(.tool_input.command // (.tool_input | tostring))")' \
-  "$cache/$key.jsonl" >"$log" 2>/dev/null || cp "$cache/$key.jsonl" "$log"
+# Headless: file edits only inside this checkout + the notes file; read-only git.
+write_state ""
+PR_FIX_URL=$url agent_run fix "$prompt --headless" "${log%.log}"
+write_state "$AGENT_SESSION"
 
 status=$(grep -E '^STATUS:' "$log" | tail -1 | cut -c9-)
 cost=$(sed -n 's/^COST: //p' "$log" | tail -1)
