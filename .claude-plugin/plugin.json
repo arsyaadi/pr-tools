@@ -1,6 +1,6 @@
 {
   "name": "pr-tools",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Claude reviews GitHub PRs for bugs (drafted as a pending review you submit) and fixes review comments on your own PRs, with an optional macOS menu bar.",
   "author": { "name": "arsyaadi", "url": "https://github.com/arsyaadi" },
   "homepage": "https://github.com/arsyaadi/pr-tools",

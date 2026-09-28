@@ -44,10 +44,16 @@ Write JSON to the `--notes` path (create or overwrite):
   "threads": [
     {"id": "<thread id>", "kind": "fix|question|skip", "path": "<file>", "line": 12,
      "summary": "<one line: what the reviewer asked>",
-     "reply": "<fix: one line on what changed | question: draft answer | skip: why>"}
+     "reply": "<see below>"}
   ]
 }
 ```
+
+`reply` is Markdown, short and plain (no emojis, no thanks/apologies):
+- **fix**: one bullet per change, `- <what changed>` (e.g. ``- Added a null check on `user.id` ``).
+  `pr-fix-finish` appends `Fixed in <sha>.` below it.
+- **question**: the answer in one or two sentences; bullets if it has several points.
+- **skip**: one line on why it needs my decision.
 
 Write `reply` in `language` from my settings, whatever language the reviewer used. Keep technical
 terms, code identifiers, file paths and error messages in English as they are (e.g. "null check",

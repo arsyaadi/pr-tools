@@ -114,13 +114,23 @@ Ask which ones to drop, then wait for my answer. With `--headless`, don't ask: k
 
 ## 7. Draft the pending review
 
-Write each kept finding as a brief comment: no emojis, say what breaks and when, suggest the fix
-in one or two lines. Nits start with `nit (non-blocking):`.
+Write each kept finding in this shape. No emojis, no filler, one short sentence per line:
+
+```
+**<title: what is wrong, one line>**
+
+- **Impact:** <what breaks, and when>
+- **Fix:** <the fix in one line; code in backticks>
+```
+
+Add a `- **Why:**` bullet between them only when the cause isn't obvious from the title.
+Nits: `nit (non-blocking): <one line>`, plus a `- **Fix:**` bullet if the fix isn't obvious.
 
 **Language:** write the review (comments and body) in `language` from my settings, whatever
 language the PR uses. Keep technical terms, code identifiers, file paths and error messages in
 English as they are (e.g. "race condition", "null check", `formatDateTime`); don't translate them.
-The fixed phrases below are given in English: write them in `language` too. Footers stay as given.
+The fixed phrases (including the `Impact` / `Why` / `Fix` labels) are given in English: write
+them in `language` too. Footers stay as given.
 
 - A finding whose line is on the new (RIGHT) side of a diff hunk → an inline comment
   `{"path", "line", "side": "RIGHT", "body"}`. For multi-line ranges add `start_line` and
@@ -130,7 +140,7 @@ The fixed phrases below are given in English: write them in `language` too. Foot
 - `body` opens with one line: how many issues were found and that bugs were checked, e.g.
   `Found 2 issues (checked for bugs and regressions against history).`
 - "Worth a look" findings (50-79) are inline comments too (same placement rules), starting with
-  `**Worth a look (lower confidence):**`. Only ones outside the diff hunks go in the `body`,
+  `**Worth a look (lower confidence):**` in front of the title. Only ones outside the diff hunks go in the `body`,
   under a `**Worth a look (lower confidence)**` heading with a permalink each.
 - `body` always ends with a blank line and then exactly this footer (also on LGTM reviews):
   `🤖 Reviewed with [Claude Code](https://claude.com/claude-code)`.
