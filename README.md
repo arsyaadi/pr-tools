@@ -3,8 +3,9 @@
 GitHub pull request skills for [Claude Code](https://claude.com/claude-code),
 [Codex](https://openai.com/codex) and [Antigravity](https://antigravity.google):
 
-- **`pr-review`** reviews a PR for bugs and drafts the findings as inline comments in a pending
-  review. Nobody else sees it until you submit it.
+- **`pr-review`** reviews a PR for bugs, violations of the repo's own rules and code smells, and
+  drafts the findings as inline comments in a pending review. Nobody else sees it until you submit
+  it.
 - **`pr-fix`** takes the unresolved review comments on your own PR, makes the changes in a separate
   worktree and leaves them uncommitted so you can go through the diff first.
 - **A macOS menu bar** (SwiftBar, optional) that lists PRs waiting for your review, new commits on PRs
@@ -58,15 +59,21 @@ Run it again to update. Restart your agent afterwards.
 ```
 
 - Two passes look for bugs: one reads the diff, one reads the git history of the touched code. A
-  third scores every finding. Agents that can run subagents run them in parallel, the others one
-  after another. Everything runs on the model your agent is set to.
+  third checks the change against the repo's written rules (`CLAUDE.md`, `AGENTS.md`,
+  `CONTRIBUTING.md` and the docs they point to, read from the base branch) and for code smells
+  (deep nesting, long if/else chains, magic values, reinvented framework features, side effects in
+  setup, over-engineering). Agents that can run subagents run them in parallel, the others one
+  after another. A last pass scores every bug and rule finding. Everything runs on the model your
+  agent is set to.
 - 80 and up becomes an inline comment. 50–79 becomes an inline comment marked as lower confidence.
-  Below 50 is dropped. With nothing left, it drafts an LGTM.
+  Below 50 is dropped. A rule violation is scored like a bug: the rule has to be really there and
+  cover the line. A general checklist ([`quality-checklist.md`](skills/pr-review/quality-checklist.md),
+  from Google's code review guide, Fowler's code smells and Sonar's complexity limits) adds objective
+  checks scored the same way, such as cognitive complexity over 15 or a duplicated block; judgment
+  calls become up to 15 non-blocking nits. With nothing left, it drafts an LGTM.
 - If you reviewed the PR before, only the commits since your last review are checked.
 - You see the list first and pick what to drop, then it creates the pending review. On your own PR it
   posts a comment instead, since GitHub doesn't let you approve your own PR.
-- Add `--lean` for an extra over-engineering pass (needs the
-  [ponytail](https://github.com/DietrichGebert/ponytail) plugin).
 
 To submit, use the menu bar, or run this in a terminal (GitHub's own "Finish your review" box drops
 the summary the agent wrote):

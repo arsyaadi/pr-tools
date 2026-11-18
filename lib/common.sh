@@ -54,8 +54,10 @@ agent_run() {
     if [[ $mode == review ]]; then
       allow+=("Bash(pr-review-post:*)" "Bash(gh pr view:*)" "Bash(gh pr diff:*)" "Bash(gh repo view:*)"
         "Bash(gh api user --jq .login)" "Bash(git fetch:*)" "Bash(git merge-base:*)"
-        "Skill(pr-review)" "Skill(ponytail-review)" "Skill(ponytail:ponytail-review)")
-      args+=(--no-session-persistence)
+        "Skill(pr-review)")
+      # the skill folder: Read of quality-checklist.md is denied outside the clone otherwise (a
+      # Read() allow rule doesn't cover it; --add-dir with the symlinked path does)
+      args+=(--no-session-persistence --add-dir "$HOME/.claude/skills/pr-review")
     else
       allow+=("Bash(pr-threads:*)" "Bash(git status:*)" "Skill(pr-fix)")
       args+=(--permission-mode acceptEdits --add-dir "$cache")

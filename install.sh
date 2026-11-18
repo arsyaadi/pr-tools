@@ -42,7 +42,8 @@ found=0
 say "Skills:"
 if command -v claude >/dev/null || [[ -d $HOME/.claude ]]; then
   skills_to "$HOME/.claude/skills" "Claude Code"
-  mkdir -p "$HOME/.claude/agents" && link "$root/agents/pr-bug-hunter.md" "$HOME/.claude/agents/pr-bug-hunter.md"
+  mkdir -p "$HOME/.claude/agents"
+  for a in "$root"/agents/*.md; do link "$a" "$HOME/.claude/agents/${a##*/}"; done
   found=1
 fi
 if command -v codex >/dev/null || [[ -d ${CODEX_HOME:-$HOME/.codex} ]]; then
