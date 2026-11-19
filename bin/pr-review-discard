@@ -1,0 +1,29 @@
+#!/bin/bash
+# Discard my PENDING review on a PR: deletes the draft only (GitHub refuses to delete a submitted
+# review this way). Asks for confirmation first. No agent's allow list includes this: deleting is mine.
+# usage: pr-review-discard <pr-url>
+source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"   # $0 may be a symlink in ~/.local/bin
+set -o pipefail
+url=${1:?usage: pr-review-discard <pr-url>}
+pr_parts "$url"; use_gh_account
+title="PR review · $repo #$num"
+
+# pending reviews are only visible to their author, so the PENDING one here is mine
+pending=$(gh api "repos/$owner/$repo/pulls/$num/reviews" --jq '[.[] | select(.state == "PENDING")][0] // empty')
+[[ -n $pending ]] || { notify "$title" "No pending review to discard"; echo "No pending review to discard" >&2; exit 1; }
+id=$(jq -r .id <<<"$pending")
+inline=$(gh api "repos/$owner/$repo/pulls/$num/reviews/$id/comments" --jq length)
+
+question="Discard your pending review on $repo #$num? ($inline inline comment(s) and the summary are deleted, this can't be undone)"
+if [[ -t 0 ]]; then
+  read -r -p "$question [y/N] " answer; [[ $answer == [yY]* ]] || exit 0
+else
+  osascript -e 'on run a' -e 'display dialog (item 1 of a) with title "Discard PR review" with icon caution buttons {"Cancel", "Discard"} default button "Cancel" cancel button "Cancel"' \
+    -e 'end run' "$question" >/dev/null 2>&1 || exit 0
+fi
+
+resp=$(gh api -X DELETE "repos/$owner/$repo/pulls/$num/reviews/$id" 2>&1) ||
+  { notify "$title" "Discard failed: ${resp:0:100}"; echo "$resp" >&2; exit 1; }
+notify "$title" "Pending review discarded" "$url"
+echo "Discarded the pending review on $slug#$num"
+refresh_menubar

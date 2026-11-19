@@ -53,11 +53,17 @@ agent_run() {
     local args=(--settings '{"disableAllHooks":true}' --output-format stream-json --verbose)
     if [[ $mode == review ]]; then
       allow+=("Bash(pr-review-post:*)" "Bash(gh pr view:*)" "Bash(gh pr diff:*)" "Bash(gh repo view:*)"
-        "Bash(gh api user --jq .login)" "Bash(git fetch:*)" "Bash(git merge-base:*)"
+        "Bash(gh api user --jq .login)" "Bash(pr-threads:*)" "Bash(git fetch:*)" "Bash(git merge-base:*)"
         "Skill(pr-review)")
+      # the bash check blocks a heredoc'd JSON body, so the review goes through a file: the only
+      # one it may write (removed first: Write refuses to overwrite a file it hasn't read)
+      local draft=$out.review.json; rm -f "$draft"
+      allow+=("Edit(/$draft)")
       # the skill folder: Read of quality-checklist.md is denied outside the clone otherwise (a
       # Read() allow rule doesn't cover it; --add-dir with the symlinked path does)
-      args+=(--no-session-persistence --add-dir "$HOME/.claude/skills/pr-review")
+      args+=(--no-session-persistence --add-dir "${draft%/*}"
+        --add-dir "$HOME/.claude/skills/pr-review")
+      prompt+=" (review draft file: $draft)"
     else
       allow+=("Bash(pr-threads:*)" "Bash(git status:*)" "Skill(pr-fix)")
       args+=(--permission-mode acceptEdits --add-dir "$cache")

@@ -4,7 +4,7 @@ description: Review a GitHub PR for bugs, repo-rule violations and code smells; 
 argument-hint: "[pr-url] [--headless]"
 disable-model-invocation: true
 effort: medium
-allowed-tools: Task, Agent, Read, Grep, Glob, Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh repo view:*), Bash(gh api user --jq .login), Bash(git fetch:*), Bash(git blame:*), Bash(git log:*), Bash(git show:*), Bash(git diff:*), Bash(git merge-base:*), Bash(pr-tools-config)
+allowed-tools: Task, Agent, Read, Grep, Glob, Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh repo view:*), Bash(gh api user --jq .login), Bash(pr-threads:*), Bash(git fetch:*), Bash(git blame:*), Bash(git log:*), Bash(git show:*), Bash(git diff:*), Bash(git merge-base:*), Bash(pr-tools-config)
 ---
 
 Review the pull request given with this skill (its arguments: a PR URL and optional flags) and draft the findings as a **pending** GitHub review.
@@ -24,6 +24,8 @@ Make a todo list first, then follow these steps precisely.
 - `gh api user --jq .login` → my login.
 - `gh pr view <url> --json state,isDraft,title,body,author,baseRefName,headRefName,headRefOid,changedFiles,additions,deletions,reviews,url`
 - `gh pr diff <url>` → the diff.
+- `pr-threads <url>` → the PR's unresolved review threads, anyone's (`path`, `line`, `isOutdated`,
+  `comments[]` with `author`, `body`, `url`). Read-only.
 
 ## 2. Eligibility (ask, don't guess)
 
@@ -32,8 +34,9 @@ Make a todo list first, then follow these steps precisely.
 - Draft → tell me it's a draft and ask whether to continue.
 - I'm the PR's author → **self-review**: `pr-review-post` publishes it right away as a Comment
   (no pending step; GitHub allows nothing else on your own PR). Step 2b applies the same way.
-- I already have a PENDING review → stop and tell me to submit or discard it on GitHub first
-  (GitHub allows only one pending review per user per PR).
+- I already have a PENDING review → stop and tell me to submit or discard it first (menu bar:
+  "Submit as …" / "Discard pending review", or on GitHub); GitHub allows only one pending review per
+  user per PR.
 - `--headless`: don't ask. Drafts → continue. Closed/merged, skipped titles and an existing PENDING
   review → stop with a `STATUS:` line (step 8).
 
@@ -57,6 +60,20 @@ In incremental mode, the review `body` opens with `Incremental review: <k> new c
 <LAST short sha>.` (in `language`). Inline comments must still sit on lines inside the PR's full diff (`gh pr diff`);
 anything else goes in the body.
 
+## 2c. My open threads
+
+My unresolved threads are the ones from `pr-threads` whose first comment is mine. For each, read
+the code it points at on `headRefOid` (`git show <headRefOid>:<path>` in a clone, after
+`git fetch origin pull/<n>/head --quiet` if step 2b didn't run it; else the diff)
+and decide: **addressed** (the code no longer has the problem), **open** (unchanged or only partly
+fixed), or **unclear**. Say why in one line each. Don't reply to or resolve the threads: there is no
+write path for that, and resolving is mine.
+
+When there is at least one, the review `body` gets a section `**My earlier comments**` (in
+`language`): `<n> addressed, <m> still open`, then one bullet per open or unclear thread with its
+first comment's `url` and the one-line reason. Addressed threads are only counted. Open threads
+are not raised again as new findings.
+
 ## 3. Review with parallel agents
 
 Split the diff first: pure renames/moves (`rename from/to` with no hunks, or `similarity index 100%`)
@@ -64,7 +81,8 @@ carry no code to review. List them by name only and leave them out of what the a
 
 Summarize the change first (what and why, from title, body and the non-rename diff; a small, fast
 subagent on a cheaper model is enough, if your agent lets you pick one). Pass that summary to all angles below and to the scorer, so intentional
-changes aren't flagged.
+changes aren't flagged. Also pass all unresolved threads (path, line, first comment's body) as
+**already raised**: the angles don't report them again.
 
 In a clone of the PR's repo (`gh repo view --json nameWithOwner` matches `<owner>/<repo>`), run
 `git fetch origin <baseRefName> --quiet` now: B and C both read `origin/<baseRefName>`.
@@ -138,7 +156,8 @@ outright, 75 if it clearly applies, 25 if it's a stretch, 0 if the rule isn't th
 measurement is wrong. Give the scorer the rule files' text and `quality-checklist.md` for that.
 
 Buckets: **≥ 80** → inline comments; **50-79** → "worth a look" inline comments (labelled as lower
-confidence); **< 50** → drop. Also drop, whatever the score: pre-existing issues, issues on lines this PR didn't touch,
+confidence); **< 50** → drop. Also drop, whatever the score: anything an unresolved thread already raises on the same line or
+range (give the scorer the already-raised list for this), pre-existing issues, issues on lines this PR didn't touch,
 things a linter/typechecker/CI would catch, pedantic style that no written repo rule asks for, and
 intentional behavior changes that are part of the PR's purpose. Don't build or run tests.
 
@@ -151,7 +170,7 @@ contradicts the summary's stated intent.
 ## 6. Show me before posting
 
 Print a numbered list of everything that survived: `file:line`, one-line description, score and
-bucket (inline / worth a look / nit), and the rule file for rule findings. If nothing scored ≥ 50 and there are no nits:
+bucket (inline / worth a look / nit), and the rule file for rule findings. If nothing scored ≥ 50, there are no nits and none of my earlier comments (step 2c) is open or unclear:
 - someone else's PR → skip the question and go to step 7 with no comments, only a `body` of
   `LGTM. No issues found (checked for bugs, regressions against history, repo rules and code smells).` (in `language`).
   It stays pending, so I can submit it as Approve in one click.
@@ -201,13 +220,21 @@ you are: `[Claude Code](https://claude.com/claude-code)`, `[Codex](https://opena
 
 Create the review with `pr-review-post`, the only allowed write path. It takes
 `{"commit_id": "<headRefOid>", "body": "...", "comments": [...]}` on stdin, strips `event` so the
-review stays PENDING, and refuses any PR other than the one being reviewed:
+review stays PENDING, and refuses any PR other than the one being reviewed. `commit_id` is the
+`headRefOid` from step 1 (its first 7+ characters are enough). If the PR got new commits since, the
+script refuses (exit 5), because the lines may have moved: don't retry with the new head, stop and
+tell me to review again (headless: `STATUS: failed, new commits during the review, run it again`).
 
 ```
 pr-review-post <pr-url> <<'JSON'
 {...}
 JSON
 ```
+
+Claude Code: skip the heredoc, its bash check blocks a JSON body inline ("brace with quote
+character"). Write the JSON with the Write tool to the review draft file the prompt names (headless
+runs may write nowhere else), or to a file of your choice if it names none, then run
+`pr-review-post <pr-url> < <that file>`.
 
 Don't call `gh api` to write anything yourself. If it fails with 422 because a line can't be
 resolved, move those comments into `body` and retry once. Submitting is mine to do.
@@ -223,5 +250,5 @@ For a self-review there is nothing to finish: it's already published as a Commen
 
 With `--headless`, the **last line** of your output must be one line starting with `STATUS: `
 (it becomes the notification), e.g. `STATUS: pending review drafted, 2 inline + 1 worth a look + 3 nits`, `STATUS: self-review posted, 1 inline`,
-`STATUS: no issues, LGTM drafted (pending)`, `STATUS: skipped, title matches the skip pattern`, `STATUS: stopped, you already have a
+`STATUS: no issues, LGTM drafted (pending)`, `STATUS: pending review drafted, 1 inline, 2 of 3 earlier comments addressed`, `STATUS: skipped, title matches the skip pattern`, `STATUS: stopped, you already have a
 pending review`, `STATUS: failed, <short reason>`.

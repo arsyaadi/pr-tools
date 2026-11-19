@@ -7,7 +7,7 @@ url=${1:?usage: pr-review-headless <pr-url>}; pr_parts "$url"; use_gh_account; r
 title="PR review · $repo #$num · $(agent_name)"
 
 state=$HOME/.cache/pr-review; mkdir -p "$state"
-find "$state" -maxdepth 1 -type f \( -name '*.log' -o -name '*.jsonl' \) -mtime +30 -delete 2>/dev/null
+find "$state" -maxdepth 1 -type f \( -name '*.log' -o -name '*.json*' \) -mtime +30 -delete 2>/dev/null
 log=$state/$repo-$num.log lock=$state/$repo-$num.running
 [[ -e $lock ]] && { notify "$title" "Already running"; exit 0; }
 agent_name >"$lock"; trap 'rm -f "$lock"; refresh_menubar' EXIT

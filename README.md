@@ -71,7 +71,11 @@ Run it again to update. Restart your agent afterwards.
   from Google's code review guide, Fowler's code smells and Sonar's complexity limits) adds objective
   checks scored the same way, such as cognitive complexity over 15 or a duplicated block; judgment
   calls become up to 15 non-blocking nits. With nothing left, it drafts an LGTM.
-- If you reviewed the PR before, only the commits since your last review are checked.
+- If you reviewed the PR before, only the commits since your last review are checked, and each of
+  your unresolved comments is marked addressed or still open in the summary. Issues already raised
+  in an unresolved thread, by anyone, aren't raised again.
+- If the PR gets new commits while the review runs, nothing is posted: the line numbers may have
+  moved, so run it again.
 - You see the list first and pick what to drop, then it creates the pending review. On your own PR it
   posts a comment instead, since GitHub doesn't let you approve your own PR.
 
@@ -103,10 +107,13 @@ The menu bar is the easier way in: every PR of yours with unresolved comments ge
 
 ## Menu bar
 
-One submenu per `gh` account:
+One submenu per `gh` account. A pending review gets "Submit as Approve / Comment / Request changes"
+and "Discard pending review"; both ask you to confirm first.
 
 - **Needs review**: PRs where your review is requested.
 - **New commits since my review**: PRs you reviewed that got new commits.
+- **Pending reviews**: PRs where you have an unsubmitted review that isn't listed above (for
+  example one started by running `pr-review` on a PR by URL).
 - **My PRs**: CI state and unresolved comments, with the fix buttons.
 
 With more than one agent installed, every review and fix button opens a "… with" submenu to pick
@@ -140,7 +147,9 @@ account, `gh auth login` again; the menu bar picks it up and runs its actions as
 - Every write to GitHub goes through a small script that decides what's allowed, not through the agent:
   `pr-review-post` strips any submit event (reviews on other people's PRs stay pending) and only
   writes to the PR being reviewed; `pr-thread-reply` only replies on your own PRs.
-- Submitting a review is `pr-review-submit`, which asks you to confirm and isn't in any allow list.
+- Submitting a review is `pr-review-submit`, and deleting a pending one is `pr-review-discard`.
+  Both ask you to confirm and aren't in any allow list. Discarding only deletes the draft: GitHub
+  refuses to delete a submitted review that way.
 - Background runs (the menu bar) can only use read-only `gh`/`git` commands and those scripts, on
   every agent. Fix runs can only edit files inside their worktree.
   - Claude Code: an exact `--allowedTools` list.

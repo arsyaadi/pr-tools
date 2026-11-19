@@ -32,6 +32,9 @@ QUERY='query{
   review: search(query:"is:pr is:open review-requested:@me archived:false", type:ISSUE, first:20){
     nodes{... on PullRequest{number title url repository{nameWithOwner}
       pending: reviews(states:PENDING, first:1){totalCount}}}}
+  involved: search(query:"is:pr is:open involves:@me -author:@me archived:false sort:updated-desc", type:ISSUE, first:30){
+    nodes{... on PullRequest{number title url repository{nameWithOwner}
+      pending: reviews(states:PENDING, first:1){totalCount}}}}
   mine: search(query:"is:pr is:open author:@me archived:false sort:updated-desc", type:ISSUE, first:20){
     nodes{... on PullRequest{number title url isDraft headRefOid repository{nameWithOwner}
       reviewThreads(first:100){nodes{isResolved}}
@@ -100,16 +103,31 @@ agent_items() {
 }
 busy() { echo "$(cat "$1" 2>/dev/null || echo Agent) is $2… | $gray"; }   # lock files hold the agent's name
 
+# submit / discard my pending review (<prefix> is the item's dashes plus indentation)
+pending_actions() {   # $1 prefix, $2 "bash=/usr/bin/env param1=PR_GH_ACCOUNT=<account>", $3 url
+  echo "$1Pending review: check it on GitHub | href=$3/files $act"
+  for e in APPROVE:Approve COMMENT:Comment "REQUEST_CHANGES:Request changes"; do
+    echo "$1Submit as ${e#*:} | $2 param2=$bin/pr-review-submit param3=$3 param4=${e%%:*} terminal=false $act"
+  done
+  echo "$1Discard pending review | $2 param2=$bin/pr-review-discard param3=$3 terminal=false $red"
+}
+
+# my pending reviews on PRs not listed above (not requested, no new commits), e.g. one started by
+# running /pr-review on a PR by URL
+pending_tsv() {   # $1 json, $2 urls already listed (newline separated) → repo, num, title, url
+  jq -r --arg skip "$2" '.data as $d | ([$d.review.nodes[].url] + ($skip | split("\n"))) as $ex |
+    [$d.reviewed.nodes[], $d.involved.nodes[]] | unique_by(.url) | .[] |
+    select(.pending.totalCount > 0 and (.url | IN($ex[]) | not)) |
+    [(.repository.nameWithOwner | split("/")[1]), .number, .title[0:50], .url] | @tsv' <<<"$1"
+}
+
 # review actions for one PR inside an account submenu: running / submit my pending review / start
 review_actions() {   # $1 account, $2 repo, $3 num, $4 url, $5 pending, $6 label
   local as="bash=/usr/bin/env param1=PR_GH_ACCOUNT=$1"
   if [[ -e $HOME/.cache/pr-review/$2-$3.running ]]; then
     echo "--    $(busy "$HOME/.cache/pr-review/$2-$3.running" reviewing)"
   elif (( $5 )); then
-    echo "--    Pending review: check it on GitHub | href=$4/files $act"
-    for e in APPROVE:Approve COMMENT:Comment "REQUEST_CHANGES:Request changes"; do
-      echo "--    Submit as ${e#*:} | $as param2=$bin/pr-review-submit param3=$4 param4=${e%%:*} terminal=false $act"
-    done
+    pending_actions "--    " "$as" "$4"
   else
     agent_items "--    " "$6" "$4" "$as param2=PR_AGENT=@A@ param3=$bin/pr-review-headless param4=$4 terminal=false" \
       "bash='$SWIFTBAR_PLUGIN_PATH' param1=review param2=$4 param3=$1 param4=@A@ terminal=false"
@@ -142,6 +160,16 @@ for a in "${ACCOUNTS[@]}"; do
       echo "--$r #$num · $title · $delta | href=$url"
       review_actions "$a" "$r" "$num" "$url" "$pending" "Review new commits"
     done <<<"$changed"
+  fi
+
+  orphans=$(pending_tsv "$j" "$(cut -f4 <<<"$changed")")
+  if [[ -n $orphans ]]; then
+    echo "-----"
+    echo "--Pending reviews · $(grep -c . <<<"$orphans") | $gray"
+    while IFS=$'\t' read -r r num title url; do
+      echo "--$r #$num · $title | href=$url"
+      pending_actions "--    " "bash=/usr/bin/env param1=PR_GH_ACCOUNT=$a" "$url"
+    done <<<"$orphans"
   fi
 
   # My PRs (one level deeper), each a submenu: open, self-review (not for titles matching
