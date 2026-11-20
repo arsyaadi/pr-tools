@@ -1,6 +1,6 @@
 ---
 name: pr-review
-description: Review a GitHub PR for bugs, repo-rule violations and code smells; findings become inline comments in a PENDING review (only you see it until you submit). Run only when the user invokes it with a PR URL.
+description: Review a GitHub PR for bugs, security and performance problems, repo-rule violations and code smells; findings become inline comments in a PENDING review (only you see it until you submit). Run only when the user invokes it with a PR URL.
 argument-hint: "[pr-url] [--headless]"
 disable-model-invocation: true
 effort: medium
@@ -87,13 +87,15 @@ changes aren't flagged. Also pass all unresolved threads (path, line, first comm
 In a clone of the PR's repo (`gh repo view --json nameWithOwner` matches `<owner>/<repo>`), run
 `git fetch origin <baseRefName> --quiet` now: B and C both read `origin/<baseRefName>`.
 
-Then review from three angles: A and B look for bugs, C for code quality. Run all three on every
-review, however small the diff; no shortcut, no "I checked it myself instead". If you can run
-subagents, you must run them as three subagents **in parallel** (in Claude Code: `pr-bug-hunter`
-for A and B, `pr-quality-hunter` for C, which gets angle C below and `quality-checklist.md`
-verbatim); only an agent that can't run subagents does A, then B, then C itself, and then reads
-`quality-checklist.md` before C. Each angle yields a list of issues: file, line(s) on the new side,
-description, and the reason it was flagged. Your final output names the angles that ran (and how C
+Then review from four angles: A and B look for bugs, C for code quality, D for security and
+performance. Run all four on every review, however small the diff; no shortcut, no "I checked it
+myself instead". If you can run subagents, you must run them as four subagents **in parallel** (in
+Claude Code: `pr-bug-hunter` for A and B, `pr-quality-hunter` for C, which gets angle C below and
+`quality-checklist.md` verbatim, `pr-security-hunter` for D, which gets angle D below and
+`security-perf-checklist.md` verbatim); only an agent that can't run subagents does A, then B, then
+C, then D itself, and reads `quality-checklist.md` before C and `security-perf-checklist.md`
+before D. Each angle yields a list of issues: file, line(s) on the new side, description, and the
+reason it was flagged. Your final output names the angles that ran (and how C
 was grouped), and any that were skipped with the reason.
 
 Large PRs dilute angle C. When the non-rename diff touches more than 10 files or 800 changed lines,
@@ -129,17 +131,28 @@ group's diff plus the PR's full file list; the smell cap applies per group.
   file) or a `[must]` item (quote the item, plus the measured value, e.g. the complexity score, or
   the other copy's location). No cap on those. The rest are **smells**: at most 15, most impactful
   first.
+- **D: security and performance.** Check every changed line against `security-perf-checklist.md`
+  in this skill's folder (read it; pass it verbatim to the subagent): injection, XSS, broken access
+  control, CSRF, secrets, unsafe deserialization, path traversal, SSRF, weak crypto, mass assignment;
+  N+1 queries, unbounded work, quadratic hot paths, missing indexes, repeated work, resource leaks,
+  blocking calls. Each finding: file, line(s), `security` or `performance`, the checklist item, a
+  one-line description, the evidence (the untrusted input's path to the sink, or what grows with
+  input), and a concrete one-line fix. No evidence, no finding. In a clone, look for the repo's own
+  guard, helper or index before flagging; outside one, judge from the diff and say so.
 
-Bugs come from A and B only: C doesn't report bugs, and A/B don't report style.
+Bugs come from A, B and D: C doesn't report bugs, and A/B/D don't report style. D reports only
+security and performance; A may still catch an obvious security hole, and the scorer merges the
+two.
 
 **Gate before step 4.** In Claude Code, check that you have called the `Task`/`Agent` tool with
-`pr-bug-hunter` for A, `pr-bug-hunter` for B (unless B was skipped for no clone), and
-`pr-quality-hunter` for C (once per group), and have their results. If any is missing, call it now.
-Reading the diff yourself doesn't replace them, even for a one-line change.
+`pr-bug-hunter` for A, `pr-bug-hunter` for B (unless B was skipped for no clone),
+`pr-quality-hunter` for C (once per group), and `pr-security-hunter` for D, and have their
+results. If any is missing, call it now. Reading the diff yourself doesn't replace them, even for
+a one-line change.
 
 ## 4. Score and filter
 
-Score all issues from A and B and the rule findings from C together in **one** fresh subagent if you can (a smaller, cheaper model is fine); a
+Score all issues from A, B and D and the rule findings from C together in **one** fresh subagent if you can (a smaller, cheaper model is fine); a
 fresh context judges more honestly than the one that found the issues. Otherwise score them yourself,
 skeptically. Give it the summary, the non-rename diff inline (so it doesn't re-fetch anything) and the
 numbered issue list; it scores each issue's confidence 0-100 that it is real (this rubric verbatim):
@@ -149,6 +162,10 @@ numbered issue list; it scores each issue's confidence 0-100 that it is real (th
 - 50: verified real, but a nitpick or rare in practice.
 - 75: double-checked, very likely hit in practice, directly impacts functionality.
 - 100: certain, confirmed by the evidence, will happen frequently.
+
+Before scoring, merge issues that two angles report on the same line for the same cause into one.
+A D finding is scored on this rubric too, against its evidence: if the input isn't really
+untrusted, an existing guard already stops it, or the data is bounded, it's 25 at most.
 
 For a rule finding, score instead whether the quoted rule (or `[must]` item) really says that and
 covers this line, and whether the measured value holds when you check it: 100 if it names this case
@@ -172,10 +189,10 @@ contradicts the summary's stated intent.
 Print a numbered list of everything that survived: `file:line`, one-line description, score and
 bucket (inline / worth a look / nit), and the rule file for rule findings. If nothing scored ≥ 50, there are no nits and none of my earlier comments (step 2c) is open or unclear:
 - someone else's PR → skip the question and go to step 7 with no comments, only a `body` of
-  `LGTM. No issues found (checked for bugs, regressions against history, repo rules and code smells).` (in `language`).
+  `LGTM. No issues found (checked for bugs, regressions against history, security, performance, repo rules and code smells).` (in `language`).
   It stays pending, so I can submit it as Approve in one click.
 - self-review → same, with `body` `LGTM (self-review). No issues found (checked for bugs,
-  regressions against history, repo rules and code smells).` It is published right away as a Comment.
+  regressions against history, security, performance, repo rules and code smells).` It is published right away as a Comment.
 Ask which ones to drop, then wait for my answer. With `--headless`, don't ask: keep everything
 (I curate the pending review on GitHub).
 
@@ -209,7 +226,7 @@ you are: `[Claude Code](https://claude.com/claude-code)`, `[Codex](https://opena
 - A finding outside the diff hunks → a bullet in the review `body`, linked as
   `https://github.com/<owner>/<repo>/blob/<headRefOid>/<path>#L<a>-L<b>` (full sha).
 - `body` opens with one line: how many issues were found and that bugs were checked, e.g.
-  `Found 2 issues and 1 nit (checked for bugs, regressions against history, repo rules and code smells).`
+  `Found 2 issues and 1 nit (checked for bugs, regressions against history, security, performance, repo rules and code smells).`
 - "Worth a look" findings (50-79) are inline comments too (same placement rules), starting with
   `**Worth a look (lower confidence):**` in front of the title. Only ones outside the diff hunks go in the `body`,
   under a `**Worth a look (lower confidence)**` heading with a permalink each.

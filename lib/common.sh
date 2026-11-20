@@ -59,7 +59,7 @@ agent_run() {
       # one it may write (removed first: Write refuses to overwrite a file it hasn't read)
       local draft=$out.review.json; rm -f "$draft"
       allow+=("Edit(/$draft)")
-      # the skill folder: Read of quality-checklist.md is denied outside the clone otherwise (a
+      # the skill folder: Read of the checklists is denied outside the clone otherwise (a
       # Read() allow rule doesn't cover it; --add-dir with the symlinked path does)
       args+=(--no-session-persistence --add-dir "${draft%/*}"
         --add-dir "$HOME/.claude/skills/pr-review")
