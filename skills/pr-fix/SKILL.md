@@ -4,7 +4,7 @@ description: Fix unresolved review comments on your own PR as uncommitted change
 argument-hint: "<pr-url> --notes <path> [--headless]"
 disable-model-invocation: true
 effort: medium
-allowed-tools: Bash(pr-threads:*), Bash(pr-tools-config), Bash(git status:*), Bash(git diff:*), Bash(git log:*), Bash(git show:*), Bash(git blame:*)
+allowed-tools: Task, Agent, Bash(pr-threads:*), Bash(pr-tools-config), Bash(git status:*), Bash(git diff:*), Bash(git log:*), Bash(git show:*), Bash(git blame:*)
 ---
 
 Address the unresolved review comments on the pull request given with this skill (its arguments). You only edit files in
@@ -24,6 +24,14 @@ I review your changes in my editor, and `pr-fix-finish` commits/pushes and repli
 
 Read the whole thread (later comments can change the ask) and the code around `path:line`.
 
+Before acting on a suggestion, check that it's right: read the code it touches and its callers
+(`git log` / `git blame` when the history explains why it's written that way). Reviewers can be
+wrong: a null check on a value that can't be null, a rename that collides, a "simplification" that
+drops an edge case, advice that contradicts a repo rule. If applying it would be wrong or break
+something, don't apply it: make the thread a **question** whose reply says what you found, with the
+evidence (file:line, the caller, the commit). If it's right but there is a simpler way to the same
+result, apply that and say so in the reply.
+
 - **fix**: a concrete, local change the reviewer asked for (rename, null check, missing case, move
   code, typo, small refactor). Make the smallest change that satisfies it, in the repo's style. Don't
   touch unrelated code and don't reformat files.
@@ -35,7 +43,20 @@ Read the whole thread (later comments can change the ask) and the code around `p
 Don't build or run tests (only read-only git is allowed). If a fix needs a follow-up you can't verify,
 say so in its reply.
 
-## 3. Write the notes file
+## 3. Self-check the fixes
+
+Skip this when no file changed. Otherwise review your own change before handing it over: the
+uncommitted diff (`git diff`) against the threads you fixed. If you can run subagents, run one
+`pr-bug-hunter` (Claude Code) with the PR URL, base branch, angle "bugs in the diff", that diff and
+each fix thread's `path:line` and ask; otherwise check it yourself, skeptically, as a reviewer who
+didn't write it. Look only at what your change broke: wrong logic, a missed case or another caller
+of the code you changed, a fix that doesn't fully do what the thread asked.
+
+For each real problem: correct it with the smallest change, or undo that thread's change and make
+it a **skip** with the reason. Don't run the check a second time. Your final output says whether the
+self-check ran, as a subagent or by you, and what it changed.
+
+## 4. Write the notes file
 
 Write JSON to the `--notes` path (create or overwrite):
 
@@ -60,8 +81,9 @@ Write `reply` in `language` from my settings, whatever language the reviewer use
 terms, code identifiers, file paths and error messages in English as they are (e.g. "null check",
 "race condition", `formatDateTime`). No footer; `pr-fix-finish` adds it.
 
-## 4. Report
+## 5. Report
 
-List each thread as `kind · path:line · summary`, then the files you changed. With `--headless`,
-the last line of your output must be one line starting with `STATUS: `, e.g.
+List each thread as `kind · path:line · summary`, then the files you changed, then the self-check
+result (ran / skipped, and what it changed). With `--headless`, the last line of your output must be
+one line starting with `STATUS: `, e.g.
 `STATUS: 3 fixed, 1 question, 1 skipped` or `STATUS: failed, <short reason>`.

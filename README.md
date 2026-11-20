@@ -102,7 +102,10 @@ The menu bar is the easier way in: every PR of yours with unresolved comments ge
 "Fix N comments with …" button. Then:
 
 1. The agent checks out the branch in its own worktree, sorts each thread into fix / question / skip,
-   and edits the code for the fixes. Nothing is committed. Your editor opens on the worktree.
+   and edits the code for the fixes. It checks each suggestion against the code first: one that
+   would be wrong becomes a question with the evidence instead of a change. Then a bug pass reads
+   its own diff and corrects or drops a fix that broke something. Nothing is committed. Your editor
+   opens on the worktree.
 2. You read the diff. "Follow up with …" sends feedback ("drop that helper", "undo the change
    in auth.ts") into the same agent session, as many times as you like.
 3. "Commit, push and reply" commits what's left, pushes and replies to each fixed thread with the
