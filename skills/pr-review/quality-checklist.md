@@ -105,14 +105,50 @@ confirm), don't stay silent: raise it as a question nit, `Why X instead of Y?`, 
   comments for why.
 - **[must]** A comment, TODO or doc that this PR makes wrong. → Update or remove it.
 
-## Tests and docs
+## Docs
 
-- **[must]** New or changed logic in a part of the repo that already has tests, with no test added or
-  updated for it. → A test that fails without the change.
-- **[nit]** A test that can't fail (no assertion, asserts the mock, snapshot of everything). → Assert
-  the behavior.
+Tests are angle F's (`testing-checklist.md`), not this checklist's.
+
 - **[must]** A change to how something is built, configured, run or used, with no update to the
   README/docs that describe it, when the repo keeps such docs. → Update them in this PR.
+
+## Dependencies and config (only when the diff touches manifests, lockfiles, CI, env or config files)
+
+- **[must]** A new or upgraded dependency whose declared range conflicts with what the repo pins:
+  the runtime version (engines, CI matrix), peer dependencies, or another package's requirement.
+  Quote both. → A compatible version.
+- **[must]** A new config key, env var or feature flag added in one place the repo keeps them
+  (`.env.example`, a config schema, per-environment files, deploy manifests) but not the others,
+  or read without a default where its siblings have one. → Add it everywhere, with the same default.
+- **[must]** Behavior that silently differs by environment: a debug branch, hard-coded local URL or
+  test credential that would ship to production, or an environment check done by hand where the
+  repo has a config layer. → The config layer.
+- **[nit]** A new dependency for something the repo, the standard library or an installed package
+  already does. Name it. → Use that.
+
+## API contracts (only when the diff adds or changes an endpoint, event or public type)
+
+- **[must]** A new or changed endpoint, event or public type whose naming, status codes, error shape
+  or pagination differ from its siblings, or whose spec (OpenAPI, GraphQL schema, typed client)
+  the PR doesn't update. Name a sibling. → Match it; update the spec.
+
+## Accessibility (only when the diff touches UI markup or components)
+
+- **[must]** An interactive element that a keyboard or screen reader can't use: a click handler on
+  a `div`/`span` without role, focusability and key handling; an image without `alt`; a form
+  control without a label; an icon-only button without an accessible name. → The native element,
+  or the label.
+- **[must]** A dialog, menu or route change that doesn't move or trap focus where the repo's
+  existing components do. → The repo's component, or its focus handling.
+- **[nit]** State conveyed by color alone, or a positive `tabindex`. → A text or icon cue; the
+  natural order.
+
+## Internationalization (only where the repo translates its UI)
+
+- **[must]** A user-visible string written inline where the surrounding code uses translation keys.
+  → A key in the repo's message files.
+- **[nit]** A sentence built by concatenating translated pieces, or a date, number or currency
+  formatted by hand where a locale-aware helper exists. → One message with placeholders; the helper.
 
 ## Consistency
 
@@ -121,4 +157,4 @@ confirm), don't stay silent: raise it as a question nit, `Why X instead of Y?`, 
 
 Sources: Google Engineering Practices, "What to look for in a code review"; Martin Fowler's code
 smell catalog (Refactoring, 2nd ed.; refactoring.guru/refactoring/smells); SonarSource Cognitive
-Complexity (default threshold 15) and nesting-depth (default 3) rules.
+Complexity (default threshold 15) and nesting-depth (default 3) rules; WCAG 2.2 (accessibility).

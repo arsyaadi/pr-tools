@@ -23,4 +23,6 @@ query($owner: String!, $repo: String!, $num: Int!) {
   {url, state, author: .author.login, mine: (.author.login == $me), headRefName, headRefOid, baseRefName,
    threads: [.reviewThreads.nodes[] | select(.isResolved | not) |
      {id, isOutdated, path, line: (.line // .originalLine),
-      comments: [.comments.nodes[] | {author: .author.login, body, url}]}]}'
+      comments: [.comments.nodes[] | {author: .author.login, body, url}]}],
+   resolved: [.reviewThreads.nodes[] | select(.isResolved) |
+     {path, line: (.line // .originalLine), author: .comments.nodes[0].author.login, body: .comments.nodes[0].body}]}'

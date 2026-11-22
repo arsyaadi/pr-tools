@@ -78,7 +78,7 @@ if command -v agy >/dev/null; then
   jq '.permissions.allow = ((.permissions.allow // []) as $a | $a + ($add - $a))' --argjson add '[
     "command(gh pr view)", "command(gh pr diff)", "command(gh repo view)", "command(gh api user --jq .login)",
     "command(git fetch)", "command(git blame)", "command(git log)", "command(git show)", "command(git diff)",
-    "command(git merge-base)", "command(git status)",
+    "command(git merge-base)", "command(git status)", "command(git grep)",
     "command(pr-review-post)", "command(pr-threads)", "command(pr-tools-config)"]' \
     "$agy_settings" >"$agy_settings.tmp" && mv "$agy_settings.tmp" "$agy_settings"
   say "Antigravity allow list: $agy_settings"

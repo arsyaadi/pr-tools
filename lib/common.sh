@@ -54,7 +54,7 @@ agent_run() {
     if [[ $mode == review ]]; then
       allow+=("Bash(pr-review-post:*)" "Bash(gh pr view:*)" "Bash(gh pr diff:*)" "Bash(gh repo view:*)"
         "Bash(gh api user --jq .login)" "Bash(pr-threads:*)" "Bash(git fetch:*)" "Bash(git merge-base:*)"
-        "Skill(pr-review)")
+        "Bash(git grep:*)" "Skill(pr-review)")
       # the bash check blocks a heredoc'd JSON body, so the review goes through a file: the only
       # one it may write (removed first: Write refuses to overwrite a file it hasn't read)
       local draft=$out.review.json; rm -f "$draft"

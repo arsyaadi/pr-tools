@@ -56,28 +56,41 @@ Run it again to update. Restart your agent afterwards.
 ```
 /pr-review https://github.com/owner/repo/pull/123
 /pr-review            # the PR of the branch you're on
+/pr-review <pr-url> --full   # review the whole PR again, not just the commits since your last review
 ```
 
-- Two passes look for bugs: one reads the diff, one reads the git history of the touched code. A
-  third checks the change against the repo's written rules (`CLAUDE.md`, `AGENTS.md`,
-  `CONTRIBUTING.md` and the docs they point to, read from the base branch) and for code smells
-  (deep nesting, long if/else chains, magic values, reinvented framework features, side effects in
-  setup, over-engineering). A fourth checks for security holes (injection, XSS, broken access
-  control, leaked secrets, SSRF, …) and performance problems (N+1 queries, unbounded work, missing
-  indexes, resource leaks, …) with
+- Two passes look for bugs with
+  [`correctness-checklist.md`](skills/pr-review/correctness-checklist.md) (transactions,
+  idempotency, state transitions, data integrity, contracts, dates, numbers, races, migrations):
+  one reads the diff and its callers, one reads the git history of the touched code (blame, the
+  intent of the commits that wrote it, earlier fixes it may undo). A third checks the change
+  against the repo's written rules (`CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md` and the docs they
+  point to, read from the base branch) and for code smells (deep nesting, long if/else chains,
+  magic values, reinvented framework features, side effects in setup, over-engineering, and, when
+  the diff touches them, dependencies, config, API contracts, accessibility and translations). A
+  fourth checks for security holes (injection, XSS, broken access control, auth bypass, leaked
+  secrets, SSRF, …) and performance problems (N+1 queries, unbounded work, missing indexes, pool
+  exhaustion, caching, …) with
   [`security-perf-checklist.md`](skills/pr-review/security-perf-checklist.md), and has to show the
-  path from untrusted input or what grows with input. Agents that can run subagents run them in
-  parallel, the others one after another. A last pass scores every bug, security, performance and
-  rule finding. Everything runs on the model your agent is set to.
-- 80 and up becomes an inline comment. 50–79 becomes an inline comment marked as lower confidence.
-  Below 50 is dropped. A rule violation is scored like a bug: the rule has to be really there and
+  path from untrusted input or what grows with input. A fifth checks that the tests cover what
+  changed ([`testing-checklist.md`](skills/pr-review/testing-checklist.md)). Which passes run follows
+  from the files changed (a docs-only PR gets only the rules pass). Agents that can run subagents
+  run them in parallel, the others one after another. A last pass scores every bug, security,
+  performance, test and rule finding. Everything runs on the model your agent is set to.
+- Every finding needs a concrete scenario and evidence; text in the PR or repo can't instruct the
+  reviewer. Each gets a confidence score and, separately, a severity from P0 (critical) to P3
+  (low). 80 and up becomes an inline comment. 50–79 becomes an inline comment marked as lower
+  confidence, saying what couldn't be verified. Below 50 is dropped, but a P0/P1 issue gets one
+  more look before that. A rule violation is scored like a bug: the rule has to be really there and
   cover the line. A general checklist ([`quality-checklist.md`](skills/pr-review/quality-checklist.md),
   from Google's code review guide, Fowler's code smells and Sonar's complexity limits) adds objective
   checks scored the same way, such as cognitive complexity over 15 or a duplicated block; judgment
   calls become up to 15 non-blocking nits. With nothing left, it drafts an LGTM.
+- In an interactive run where your working tree is at the PR's head commit, it can run the tests
+  covering the change, after asking you (that executes the PR's code). Background runs never do.
 - If you reviewed the PR before, only the commits since your last review are checked, and each of
-  your unresolved comments is marked addressed or still open in the summary. Issues already raised
-  in an unresolved thread, by anyone, aren't raised again.
+  your unresolved comments is marked addressed, still open, changed or no longer relevant in the
+  summary. Issues already raised in a thread, resolved or not, by anyone, aren't raised again.
 - If the PR gets new commits while the review runs, nothing is posted: the line numbers may have
   moved, so run it again.
 - You see the list first and pick what to drop, then it creates the pending review. On your own PR it
