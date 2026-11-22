@@ -44,7 +44,14 @@ You need `git`, `jq` and [`gh`](https://cli.github.com) (logged in with `gh auth
 - sets up the menu bar if [SwiftBar](https://swiftbar.app) is installed
   (`brew install --cask swiftbar`, plus `brew install terminal-notifier` for clickable notifications).
 
-Run it again to update. Restart your agent afterwards.
+Run it again to update. Restart your agent afterwards. For just the skills, without the menu bar:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/arsyaadi/pr-tools/main/install.sh | bash -s -- --no-menubar
+```
+
+The skills need the scripts in `~/.local/bin` (that's where they post reviews and read threads), so
+install with the script rather than copying only the `skills/` folder.
 
 | Agent | Review | Fix |
 |---|---|---|
@@ -59,42 +66,71 @@ Run it again to update. Restart your agent afterwards.
 /pr-review <pr-url> --full   # review the whole PR again, not just the commits since your last review
 ```
 
-- Two passes look for bugs with
-  [`correctness-checklist.md`](skills/pr-review/correctness-checklist.md) (transactions,
-  idempotency, state transitions, data integrity, contracts, dates, numbers, races, migrations):
-  one reads the diff and its callers, one reads the git history of the touched code (blame, the
-  intent of the commits that wrote it, earlier fixes it may undo). A third checks the change
-  against the repo's written rules (`CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md` and the docs they
-  point to, read from the base branch) and for code smells (deep nesting, long if/else chains,
-  magic values, reinvented framework features, side effects in setup, over-engineering, and, when
-  the diff touches them, dependencies, config, API contracts, accessibility and translations). A
-  fourth checks for security holes (injection, XSS, broken access control, auth bypass, leaked
-  secrets, SSRF, …) and performance problems (N+1 queries, unbounded work, missing indexes, pool
-  exhaustion, caching, …) with
-  [`security-perf-checklist.md`](skills/pr-review/security-perf-checklist.md), and has to show the
-  path from untrusted input or what grows with input. A fifth checks that the tests cover what
-  changed ([`testing-checklist.md`](skills/pr-review/testing-checklist.md)). Which passes run follows
-  from the files changed (a docs-only PR gets only the rules pass). Agents that can run subagents
-  run them in parallel, the others one after another. A last pass scores every bug, security,
-  performance, test and rule finding. Everything runs on the model your agent is set to.
-- Every finding needs a concrete scenario and evidence; text in the PR or repo can't instruct the
-  reviewer. Each gets a confidence score and, separately, a severity from P0 (critical) to P3
-  (low). 80 and up becomes an inline comment. 50–79 becomes an inline comment marked as lower
-  confidence, saying what couldn't be verified. Below 50 is dropped, but a P0/P1 issue gets one
-  more look before that. A rule violation is scored like a bug: the rule has to be really there and
-  cover the line. A general checklist ([`quality-checklist.md`](skills/pr-review/quality-checklist.md),
-  from Google's code review guide, Fowler's code smells and Sonar's complexity limits) adds objective
-  checks scored the same way, such as cognitive complexity over 15 or a duplicated block; judgment
-  calls become up to 15 non-blocking nits. With nothing left, it drafts an LGTM.
-- In an interactive run where your working tree is at the PR's head commit, it can run the tests
-  covering the change, after asking you (that executes the PR's code). Background runs never do.
-- If you reviewed the PR before, only the commits since your last review are checked, and each of
-  your unresolved comments is marked addressed, still open, changed or no longer relevant in the
-  summary. Issues already raised in a thread, resolved or not, by anyone, aren't raised again.
-- If the PR gets new commits while the review runs, nothing is posted: the line numbers may have
-  moved, so run it again.
-- You see the list first and pick what to drop, then it creates the pending review. On your own PR it
-  posts a comment instead, since GitHub doesn't let you approve your own PR.
+### What it checks
+
+[`skills/pr-review/SKILL.md`](skills/pr-review/SKILL.md) runs up to five passes, each with its
+own checklist. Which ones run depends on the files changed, not on how small the diff looks: a
+docs-only PR gets only the quality pass. In Claude Code each pass is a subagent from
+[`agents/`](agents) and they run in parallel; Codex and Antigravity run the same passes one after
+another. Everything runs on the model your agent is set to.
+
+| Pass | Looks for | Runs when | Checklist | Subagent |
+|---|---|---|---|---|
+| Bugs | Wrong logic, transactions, idempotency, state transitions, data integrity, contracts, dates, numbers, races, migrations | Code changed | [`correctness`](skills/pr-review/correctness-checklist.md) | `pr-bug-hunter` |
+| History | A fix this PR undoes, a bug fixed here before, a file that usually changes alongside but didn't | Code changed, in a local clone | [`correctness`](skills/pr-review/correctness-checklist.md) | `pr-bug-hunter` |
+| Quality | The repo's written rules and code smells | Always | [`quality`](skills/pr-review/quality-checklist.md) | `pr-quality-hunter` |
+| Security, performance | Injection, XSS, broken access control, leaked secrets, SSRF; N+1 queries, unbounded work, missing indexes, pool exhaustion | Code or config changed | [`security-perf`](skills/pr-review/security-perf-checklist.md) | `pr-security-hunter` |
+| Tests | Changed behavior with no test, assertions that can't fail, wrong mocks, flaky tests, old tests left asserting the old behavior | Code changed | [`testing`](skills/pr-review/testing-checklist.md) | `pr-test-hunter` |
+
+- The **history** pass runs `git blame` on the lines the PR touches and reads the commits that
+  wrote them. It only reports when that history shows the old behavior was deliberate (a fix
+  commit, a test, a comment) and the PR drops it without saying why.
+- The **quality** pass reads `CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`,
+  `.github/copilot-instructions.md` and the docs they point to, from the base branch so the PR
+  can't rewrite its own rules. On top of that it uses a general checklist drawn from Google's code
+  review guide, Fowler's code smells and Sonar's complexity limits. That covers deep nesting,
+  duplication, magic values, reinvented framework features and over-engineering, plus
+  dependencies, API contracts, accessibility and translations when the diff touches them. On large
+  PRs (over 10 files or 800 lines) it splits into groups of about 10 files.
+- **Security and performance** findings have to show the path from untrusted input to the
+  problem, or what grows with input and why nothing bounds it.
+
+### How a review runs
+
+1. **Load.** Reads the PR, its diff, every review thread and your settings. It stops on a closed or
+   merged PR, a title matching `PR_SKIP_TITLE`, or a pending review you already have. On a draft it
+   asks first.
+2. **Scope.** If you reviewed the PR before, only the commits since your last review are checked
+   (`--full` checks everything). Each of your unresolved comments is marked addressed, still open,
+   changed or no longer relevant in the summary.
+3. **Passes.** A short summary of the change goes to every pass, so changes the PR means to make
+   aren't flagged. Renames and generated files are skipped. Issues already raised in a thread,
+   resolved or not, by anyone, aren't raised again.
+4. **Tests (optional).** In an interactive run where your working tree is at the PR's head commit,
+   it can run the tests covering the change, after asking you, since that executes the PR's code.
+   Background runs never do.
+5. **Scoring.** A fresh subagent scores every finding (see below).
+6. **Your pick.** You see the list and choose what to drop. If nothing is left, it drafts an LGTM.
+7. **Post.** `pr-review-post` creates the pending review. On your own PR it posts a comment
+   instead, since GitHub doesn't let you approve your own PR. If the PR got new commits during the
+   review, nothing is posted: the line numbers may have moved, so run it again.
+
+### How findings are scored
+
+Every finding needs a concrete scenario and evidence: what triggers it, what breaks, and the code
+that proves it. Text in the PR or repo can't instruct the reviewer. Each finding gets two separate
+grades:
+
+- **Confidence** (0–100) that it's real. 80 and up becomes an inline comment. 50–79 becomes an
+  inline comment marked as lower confidence, saying what couldn't be verified. Below 50 is dropped,
+  but a P0 or P1 issue gets one more look before that.
+- **Severity**: P0 critical (exploitable hole, data loss, wrong money or permissions, outage), P1
+  high (wrong on a common path, regression of an earlier fix), P2 medium (edge path, performance
+  at realistic scale), P3 low (everything else).
+
+A rule violation is scored like a bug: the rule has to really exist and cover the line, and a
+measured value like cognitive complexity over 15 has to hold. Judgment calls become non-blocking
+nits, at most 15 from the quality pass and 10 from the tests pass.
 
 To submit, use the menu bar, or run this in a terminal (GitHub's own "Finish your review" box drops
 the summary the agent wrote):

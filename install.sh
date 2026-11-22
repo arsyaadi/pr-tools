@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install or update pr-tools for Claude Code, Codex and Antigravity. Safe to re-run.
 #   curl -fsSL https://raw.githubusercontent.com/arsyaadi/pr-tools/main/install.sh | bash
-# Run from a clone (./install.sh) to install that clone instead.
+# Run from a clone (./install.sh) to install that clone instead. --no-menubar skips the SwiftBar menu bar.
 set -euo pipefail
 
 repo=https://github.com/arsyaadi/pr-tools.git
@@ -88,8 +88,8 @@ fi
 cfg=$HOME/.config/pr-tools/config
 [[ -f $cfg ]] || { mkdir -p "${cfg%/*}"; cp "$root/config.example" "$cfg"; say "Settings: created $cfg"; }
 
-# 6. Menu bar, when SwiftBar is installed (macOS)
-if [[ -d /Applications/SwiftBar.app ]]; then
+# 6. Menu bar, when SwiftBar is installed (macOS) and not skipped with --no-menubar
+if [[ -d /Applications/SwiftBar.app && " $* " != *" --no-menubar "* ]]; then
   say "Menu bar:"; "$root/bin/pr-tools-setup-menubar" | sed 's/^/  /'
 fi
 
