@@ -50,7 +50,10 @@ agent_run() {
   claude)
     local allow=("Bash(pr-tools-config)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git diff:*)" "Bash(git blame:*)")
     # disableAllHooks: user hooks (e.g. command rewriters) would break the allow rules
-    local args=(--settings '{"disableAllHooks":true}' --output-format stream-json --verbose)
+    # deferred-work tools: `claude -p` stays alive until a scheduled wakeup fires (seen: 20 min after
+    # the review was posted), holding the .running lock the whole time
+    local args=(--settings '{"disableAllHooks":true}' --output-format stream-json --verbose
+      --disallowedTools ScheduleWakeup CronCreate Monitor)
     if [[ $mode == review ]]; then
       allow+=("Bash(pr-review-post:*)" "Bash(gh pr view:*)" "Bash(gh pr diff:*)" "Bash(gh repo view:*)"
         "Bash(gh api user --jq .login)" "Bash(pr-threads:*)" "Bash(git fetch:*)" "Bash(git merge-base:*)"
