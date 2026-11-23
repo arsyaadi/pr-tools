@@ -312,8 +312,9 @@ results when there are any.
 
 ## 5. Nits
 
-Smells from angle C and nits from angle F go in a separate group labelled `nit (non-blocking)`.
-They are P3, not scored, and never block the merge. Drop a nit that sits on the same line as a
+Smells from angle C and nits from angle F are labelled `nit (non-blocking)`. They are P3, not
+scored, and never block the merge. The label marks them; it doesn't move them: they are placed like
+any finding (step 7), inline on their line. Drop a nit that sits on the same line as a
 scored finding, or that contradicts the summary's stated intent.
 
 ## 6. Check, then show me before posting
@@ -382,6 +383,9 @@ you are: `[Claude Code](https://claude.com/claude-code)`, `[Codex](https://opena
   `**[<severity>] Worth a look (lower confidence): <title>**`, with a `- **Unverified:** <what
   couldn't be confirmed>` bullet before `Fix`. Only ones outside the diff hunks go in the `body`,
   under a `**Worth a look (lower confidence)**` heading with a permalink each.
+- Nits are inline comments too (same placement rules), never a list in the `body` just because
+  they are nits. Only ones outside the diff hunks go in the `body`, under a
+  `**Nits (non-blocking)**` heading with a permalink each.
 - `body` always ends with a blank line and then exactly this footer (also on LGTM reviews):
   `🤖 Reviewed with <agent>`.
 - Every inline comment ends with a blank line and then exactly:
