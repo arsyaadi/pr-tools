@@ -55,3 +55,27 @@ the same and its lines overlap the labeled range ±3 lines. Each expected findin
 
 Compare a change against the previous version on the same set. Keep a change only if precision
 doesn't drop; trade recall for precision, never the other way round.
+
+## Real runs (local only)
+
+Outcomes of reviews on real PRs, as a cheap check between benchmark runs. They live in
+`eval/real-runs/`, which is gitignored: the reviewed repos are private, and paths, links and notes
+would leak them. Nothing in there is committed.
+
+- `findings.jsonl`: one line per posted finding (nits included): `repo`, `pr`, `path`, `line`,
+  `placement`, `bucket` (`issue` / `worth-a-look` / `nit`), `severity`, `kind` (`bug`, `perf`,
+  `test`, `smell`, `doc`), `outcome` (`accepted`, `declined`, `partial`, `pending`), `note`, `url`,
+  `reply`. The outcome comes from the author's reply or the next incremental review, judged by hand.
+- `runs.jsonl`: one line per headless run: `scope`, the `angles` that ran as subagents,
+  `no_subagents`, `cost`, `denied` (Bash calls denied), `skill_version` (pr-tools commit).
+
+`eval/report.py` renders both into `eval/real-runs/report.html`: one offline page (no CDN) with
+headline numbers, outcome by kind and bucket, runs per skill version, and both tables.
+
+Acceptance rate is a proxy for precision, not precision itself: an author can accept a wrong nit or
+decline a right one, and missed bugs don't show up at all.
+
+```bash
+jq -s 'group_by(.kind) | map({kind: .[0].kind, n: length, accepted: map(select(.outcome == "accepted")) | length})' eval/real-runs/findings.jsonl
+jq -s 'group_by(.skill_version) | map({v: .[0].skill_version, runs: length, no_subagents: map(select(.no_subagents)) | length, denied: map(.denied) | add})' eval/real-runs/runs.jsonl
+```
