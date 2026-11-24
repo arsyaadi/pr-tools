@@ -223,6 +223,25 @@ account, `gh auth login` again; the menu bar picks it up and runs its actions as
 
 Logs are in `~/.cache/pr-review` and `~/.cache/pr-fix` and are removed after 30 days.
 
+## Evaluating changes
+
+Before changing the skill, a checklist or an agent, check that reviews don't get worse.
+[`eval/README.md`](eval/README.md) describes both ways:
+
+- **Benchmark set.** Frozen PRs labeled by hand (known bugs, security holes, intended behavior
+  changes, refactors, clean PRs), run headless at least twice each. Precision is the headline
+  number; keep a change only if it doesn't drop.
+- **Real runs.** The author's response to each finding on real PRs, plus per-run cost, angles and
+  denied commands, logged in `eval/real-runs/` (gitignored, since the reviewed repos are private).
+  `eval/report.py` turns them into an offline `eval/real-runs/report.html`:
+
+```bash
+python3 eval/report.py
+```
+
+Acceptance rate on real runs is only a proxy: authors accept wrong nits, and missed bugs don't
+show up at all.
+
 ## Uninstall
 
 ```bash
