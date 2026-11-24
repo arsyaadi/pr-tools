@@ -27,7 +27,7 @@ working tree isn't at it; then read files with `git show <head>:<path>` and sear
 `git grep <pattern> <head> -- <paths>`.
 
 Run git from the current directory as single plain commands: `git log ...`, `git blame ...`,
-`git show ...`, `git diff ...`, `git grep ...`. No `git -C`, no `cd`, no pipes or `&&`. Only these
+`git show ...`, `git diff ...`, `git grep ...`. No `git -C`, no `cd`, no `VAR=…`, no pipes, `;` or `&&`. Only these
 exact prefixes are allowed; anything else is denied. Use Read/Grep/Glob for file contents.
 
 For each issue return: file path, line or line range on the new (RIGHT) side, a one-line

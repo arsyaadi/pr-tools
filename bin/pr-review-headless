@@ -21,6 +21,13 @@ PR_REVIEW_URL=$url agent_run review "$(skill pr-review) $url --headless" "${log%
 
 status=$(grep -E '^STATUS:' "$log" | tail -1 | cut -c9-)
 cost=$(sed -n 's/^COST: //p' "$log" | tail -1)
+# claude: angle C always runs, so a drafted review with no pr-*-hunter call skipped the skill's gate
+if [[ $PR_AGENT == claude && $status =~ drafted|posted ]] && ! jq -Rne '[inputs | fromjson?
+    | .message? | objects | .content? | arrays | .[] | objects | select(.type == "tool_use") | .input.subagent_type? // ""
+    | select(startswith("pr-"))] | length > 0' "${log%.log}.jsonl" >/dev/null; then
+  status="no angle agents ran, unchecked: $status"
+  echo "WARN: no pr-*-hunter subagent ran" >>"$log"
+fi
 if [[ -n $status ]]; then
   notify "$title" "$status${cost:+ ($cost)}" "${url%/}/files"
 else

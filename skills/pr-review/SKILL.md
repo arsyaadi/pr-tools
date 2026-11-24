@@ -51,7 +51,11 @@ Pass this section verbatim to every subagent and to the scorer.
   `gh pr view`, `gh pr diff`, `gh repo view`, `pr-threads`, `pr-tools-config`. The only write is
   `pr-review-post` (step 7); tests and static analysis run only through step 3b. Never install
   dependencies, run migrations or anything that touches a database, network service, container,
-  deploy or infrastructure, and never write with `gh api`.
+  deploy or infrastructure, and never write with `gh api`. Each Bash call is one plain command:
+  no `cd` (run from where you start: in a clone, that's the clone), no `VAR=…`, no `;`, `&&`,
+  `||`, `|` or `>` (step 7 says how to write the draft). Write shas, URLs and paths out literally. Headless runs deny anything else, and a denied read
+  leaves a check undone (e.g. the repo rules). Narrow output with the command's own options
+  (`git grep -n`, `git log -L`, `--format`, `--stat`) instead of piping it.
 
 ## 1. Load the PR
 
@@ -240,7 +244,9 @@ style or test gaps. A may still catch an obvious security hole; the scorer merge
 every angle the table says runs: `pr-bug-hunter` for A, `pr-bug-hunter` for B, `pr-quality-hunter`
 for C (once per group), `pr-security-hunter` for D and E, `pr-test-hunter` for F, and have their
 results. If any is missing, call it now. Reading the diff yourself doesn't replace them, even for
-a one-line change.
+a one-line change. A small diff, a refactor, a test-only change or an incremental review of one
+commit is no exception: those are exactly the runs where this step was skipped before. Angle C
+always runs, so a review with no subagent call at all is never valid (headless runs flag it).
 
 ## 3b. Run the relevant tests (optional)
 
@@ -314,8 +320,11 @@ results when there are any.
 
 Smells from angle C and nits from angle F are labelled `nit (non-blocking)`. They are P3, not
 scored, and never block the merge. The label marks them; it doesn't move them: they are placed like
-any finding (step 7), inline on their line. Drop a nit that sits on the same line as a
-scored finding, or that contradicts the summary's stated intent.
+any finding (step 7), inline on their line. Drop a nit only when it sits on the same line as a
+scored finding, contradicts the summary's stated intent or a written repo rule, is on the
+already-raised list, or is pre-existing or on lines this PR didn't touch. Step 4's drop list is for
+scored findings: "no written repo rule asks for it" is what makes a smell a nit, not a reason to
+drop it. A test-gap nit from F is never style.
 
 ## 6. Check, then show me before posting
 
@@ -342,7 +351,8 @@ scored ≥ 50, there are no nits and none of my earlier comments (step 2c) is op
 `<checks>` lists only what ran, in this order: bugs (A), regressions against history (B),
 security (D), performance (E), tests (F), repo rules and code smells (C); e.g.
 `checked for bugs, regressions against history, security, performance, tests, repo rules and code smells`.
-Never claim a check that was skipped.
+Never claim a check that was skipped, or one you did by reading the diff yourself in place of its
+subagent.
 
 Ask which ones to drop, then wait for my answer; I can ask to see any item's full drafted comment
 first. With `--headless`, don't ask: keep everything (I curate the pending review on GitHub).
