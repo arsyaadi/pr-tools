@@ -51,7 +51,10 @@ agent_run() {
     local allow=("Bash(pr-tools-config)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git diff:*)" "Bash(git blame:*)")
     # disableAllHooks: user hooks (e.g. command rewriters) would break the allow rules
     # deferred-work tools: `claude -p` stays alive until a scheduled wakeup fires (seen: 20 min after
-    # the review was posted), holding the .running lock the whole time
+    # the review was posted), holding the .running lock the whole time. Same for background tasks:
+    # subagents ran in the background and the agent polled their transcript (never written under
+    # --no-session-persistence) with a background `until grep … sleep` loop that never ended, so
+    # CLAUDE_CODE_DISABLE_BACKGROUND_TASKS keeps subagents and Bash in the foreground (Bash timeout applies)
     local args=(--settings '{"disableAllHooks":true}' --output-format stream-json --verbose
       --disallowedTools ScheduleWakeup CronCreate Monitor)
     if [[ $mode == review ]]; then
@@ -73,7 +76,7 @@ agent_run() {
       [[ -z $session ]] && AGENT_SESSION=$(uuidgen | tr '[:upper:]' '[:lower:]')
       if [[ -n $session ]]; then args+=(--resume "$session"); else args+=(--session-id "$AGENT_SESSION"); fi
     fi
-    claude -p "$prompt" "${args[@]}" --allowedTools "${allow[@]}" </dev/null >"$out.jsonl" 2>&1
+    CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1 claude -p "$prompt" "${args[@]}" --allowedTools "${allow[@]}" </dev/null >"$out.jsonl" 2>&1
     jq -rs 'map(select(.type == "result"))[-1] | (.result // "no result (see .jsonl)"),
       "COST: $\((.total_cost_usd // 0) * 100 | round / 100)",
       (.permission_denials // [] | .[] | "DENIED: \(.tool_name) \(.tool_input.command // (.tool_input | tostring))")' \
