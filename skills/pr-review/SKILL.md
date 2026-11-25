@@ -100,8 +100,11 @@ GitHub records which commit each review was made on (`reviews[].commit.oid`). Ta
 submitted review on this PR (author = my login, state not PENDING); that commit is `LAST`.
 
 - `--full`, or no previous review → **full review** of the PR diff.
-- `LAST` == `headRefOid` → nothing new since my last review: stop (headless:
-  `STATUS: nothing new since your last review`).
+- `LAST` == `headRefOid` → no new commits. If one of my open threads that isn't settled (step 2c)
+  has a reply from someone else as its last comment (the author re-requested my review after answering, e.g. arguing
+  my comment is wrong) → **replies-only review**: do step 2c, skip steps 3-5 (no agents, no new
+  findings), show me the thread verdicts in step 6 and draft a `body`-only review in step 7. Else
+  nothing new since my last review: stop (headless: `STATUS: nothing new since your last review`).
 - Otherwise, in a clone: `git merge-base --is-ancestor LAST <headRefOid>`.
   - Ancestor → **incremental review**: the diff to review is `git diff LAST <headRefOid>` (only the new
     commits). Tell me how many commits are new; don't ask. The summary still covers the whole
@@ -109,14 +112,25 @@ submitted review on this PR (author = my login, state not PENDING); that commit 
   - Not an ancestor, or `LAST` is gone (rebased / force-pushed) → full review, and say why.
 - Not in a clone → full review, and say why.
 
+A replies-only review's `body` opens with `Re-review: no new commits, checked the replies on my
+earlier comments.` (in `language`), then the `**My earlier comments**` section, then `LGTM.` if
+none is still open, changed or unclear, then the footer. Step 6's coverage check and `<checks>`
+line don't apply (no angle ran).
+
 In incremental mode, the review `body` opens with `Incremental review: <k> new commits since
 <LAST short sha>.` (in `language`). Inline comments must still sit on lines inside the PR's full diff (`gh pr diff`);
 anything else goes in the body.
 
 ## 2c. My open threads
 
-My unresolved threads are the ones from `pr-threads` whose first comment is mine. For each, read
-the code it points at on `headRefOid` (`git show <headRefOid>:<path>` in a clone, else the diff)
+My unresolved threads are the ones from `pr-threads` whose first comment is mine. A thread is
+**settled** when one of my earlier submitted reviews (`reviews[].body` with my login) has a bullet
+starting with `[conceded]` that links its first comment's `url`, and the thread's last comment
+still isn't mine (a newer reply of mine means I disagree: judge it again). Settled threads are done:
+leave them out of everything below, the counts and bullets included, and out of new findings
+(step 3's already raised list still keeps them from being reported again).
+
+For each other thread, read the code it points at on `headRefOid` (`git show <headRefOid>:<path>` in a clone, else the diff)
 and decide:
 
 - **addressed**: the code no longer has the problem.
@@ -125,13 +139,21 @@ and decide:
 - **obsolete**: the code it points at is gone, or the concern no longer applies.
 - **unclear**: the code doesn't settle it.
 
+When the thread's last comment isn't mine, it's a reply (usually the author pushing back). Weigh it
+against the code, not against who wrote it: if it shows my comment was wrong or doesn't apply
+(the case can't happen, it's handled elsewhere, it's intended behavior with a reason), the verdict
+is **conceded**: I should resolve it. Otherwise keep the verdict above and say in one line why the
+reply doesn't settle it.
+
 Say why in one line each. Don't reply to or resolve the threads: there is no write path for that,
 and resolving is mine.
 
 When there is at least one, the review `body` gets a section `**My earlier comments**` (in
-`language`): `<n> addressed, <m> still open` (plus `, <k> changed` and `, <j> no longer relevant`
-when not zero), then one bullet per open, changed or unclear thread with its first comment's `url`
-and the one-line reason. Addressed and obsolete threads are only counted. Open and changed threads
+`language`): `<n> addressed, <m> still open` (plus `, <k> changed`, `, <j> no longer relevant` and
+`, <c> conceded` when not zero), then one bullet per open, changed, unclear or conceded thread with
+its first comment's `url` and the one-line reason; a conceded bullet starts with `[conceded]`, kept
+as is in any `language` (it's how later reviews know the thread is settled). Addressed and obsolete
+threads are only counted. Open and changed threads
 are not raised again as new findings.
 
 ## 3. Review with parallel agents
@@ -444,5 +466,5 @@ For a self-review there is nothing to finish: it's already published as a Commen
 
 With `--headless`, the **last line** of your output must be one line starting with `STATUS: `
 (it becomes the notification), e.g. `STATUS: pending review drafted, 2 inline + 1 worth a look + 3 nits`, `STATUS: self-review posted, 1 inline`,
-`STATUS: no issues, LGTM drafted (pending)`, `STATUS: pending review drafted, 1 inline, 2 of 3 earlier comments addressed`, `STATUS: skipped, title matches the skip pattern`, `STATUS: stopped, you already have a
+`STATUS: no issues, LGTM drafted (pending)`, `STATUS: pending review drafted, 1 inline, 2 of 3 earlier comments addressed`, `STATUS: replies checked, 1 conceded, 1 still open (pending)`, `STATUS: skipped, title matches the skip pattern`, `STATUS: stopped, you already have a
 pending review`, `STATUS: failed, <short reason>`.

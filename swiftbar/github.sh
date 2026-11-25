@@ -1,7 +1,7 @@
 #!/bin/bash
 # pr-tools menu bar body, run by the SwiftBar shim that pr-tools-setup-menubar installs (the shim
-# sets PR_TOOLS_ROOT to the pr-tools checkout). One submenu per gh account: PRs needing my review,
-# new commits on PRs I reviewed, my PRs. Every action runs as that account (PR_GH_ACCOUNT → GH_TOKEN).
+# sets PR_TOOLS_ROOT to the pr-tools checkout). One submenu per gh account: PRs needing my review
+# (re-requests included), my PRs. Every action runs as that account (PR_GH_ACCOUNT → GH_TOKEN).
 source "$(dirname "$0")/../lib/common.sh"
 bin=$PR_TOOLS_ROOT/bin
 
@@ -25,10 +25,8 @@ esac
 QUERY='query{
   viewer{login}
   reviewed: search(query:"is:pr is:open reviewed-by:@me -author:@me archived:false sort:updated-desc", type:ISSUE, first:20){
-    nodes{... on PullRequest{number title url headRefOid repository{nameWithOwner}
-      pending: reviews(states:PENDING, first:1){totalCount}
-      reviews(last:30){nodes{author{login} state commit{oid}}}
-      commits(last:50){nodes{commit{oid}}}}}}
+    nodes{... on PullRequest{number title url repository{nameWithOwner}
+      pending: reviews(states:PENDING, first:1){totalCount}}}}
   review: search(query:"is:pr is:open review-requested:@me archived:false", type:ISSUE, first:20){
     nodes{... on PullRequest{number title url repository{nameWithOwner}
       pending: reviews(states:PENDING, first:1){totalCount}}}}
@@ -49,22 +47,11 @@ for a in "${ACCOUNTS[@]}"; do
 done
 wait
 
-# PRs I reviewed whose head moved since my last review (skip ones already re-requested)
-changed_tsv() {   # $1 json → repo, num, title, url, delta, pending
-  jq -r '.data as $d | [$d.review.nodes[].url] as $req | $d.reviewed.nodes[] | select(.url | IN($req[]) | not) |
-    ([.reviews.nodes[] | select(.author.login == $d.viewer.login and .state != "PENDING")] | last | .commit.oid) as $mine |
-    select($mine != null and $mine != .headRefOid) |
-    ([.commits.nodes[].commit.oid] | index($mine)) as $i |
-    [(.repository.nameWithOwner | split("/")[1]), .number, .title[0:45], .url,
-     (if $i == null then "changed" else ((.commits.nodes | length) - $i - 1) as $n | "+\($n) commit\(if $n > 1 then "s" else "" end)" end),
-     .pending.totalCount] | @tsv' <<<"$1"
-}
-
 # menu bar: everything waiting on my review, all accounts together
 total=0
 for a in "${ACCOUNTS[@]}"; do
   j=$(<"$tmp/$a"); jq -e .data >/dev/null 2>&1 <<<"$j" || continue
-  total=$((total + $(jq '.data.review.nodes | length' <<<"$j") + $(changed_tsv "$j" | grep -c .)))
+  total=$((total + $(jq '.data.review.nodes | length' <<<"$j")))
 done
 # while an agent is reviewing or fixing comments: sync symbol + how many jobs are running;
 # otherwise: PR symbol + how many PRs wait for my review. Each running job holds a .running lock,
@@ -112,10 +99,10 @@ pending_actions() {   # $1 prefix, $2 "bash=/usr/bin/env param1=PR_GH_ACCOUNT=<a
   echo "$1Discard pending review | $2 param2=$bin/pr-review-discard param3=$3 terminal=false $red"
 }
 
-# my pending reviews on PRs not listed above (not requested, no new commits), e.g. one started by
-# running /pr-review on a PR by URL
-pending_tsv() {   # $1 json, $2 urls already listed (newline separated) → repo, num, title, url
-  jq -r --arg skip "$2" '.data as $d | ([$d.review.nodes[].url] + ($skip | split("\n"))) as $ex |
+# my pending reviews on PRs not listed above (not requested), e.g. one started by running
+# /pr-review on a PR by URL
+pending_tsv() {   # $1 json → repo, num, title, url
+  jq -r '.data as $d | [$d.review.nodes[].url] as $ex |
     [$d.reviewed.nodes[], $d.involved.nodes[]] | unique_by(.url) | .[] |
     select(.pending.totalCount > 0 and (.url | IN($ex[]) | not)) |
     [(.repository.nameWithOwner | split("/")[1]), .number, .title[0:50], .url] | @tsv' <<<"$1"
@@ -141,28 +128,21 @@ for a in "${ACCOUNTS[@]}"; do
     continue
   fi
   requested=$(jq '.data.review.nodes | length' <<<"$j")
-  changed=$(changed_tsv "$j"); new_commits=$(grep -c . <<<"$changed")
   # SwiftBar disables items without an action or color, even with a submenu → every parent gets a link
-  echo "$a · $((requested + new_commits)) | href=https://github.com/pulls/review-requested"
+  echo "$a · $requested | href=https://github.com/pulls/review-requested"
 
   echo "--Needs review · $requested | $gray"
   (( requested )) || echo "--Nothing to review | $gray"
-  while IFS=$'\t' read -r r num title url pending; do
+  # re-requested = I reviewed it before: the review covers new commits and replies to my threads
+  while IFS=$'\t' read -r r num title url pending again; do
     [[ -z $r ]] && continue
-    echo "--$r #$num · $title | href=$url"
-    review_actions "$a" "$r" "$num" "$url" "$pending" Review
-  done < <(jq -r '.data.review.nodes[] | [(.repository.nameWithOwner | split("/")[1]), .number, .title[0:50], .url, .pending.totalCount] | @tsv' <<<"$j")
+    echo "--$r #$num · $title${again:+ · re-requested} | href=$url"
+    review_actions "$a" "$r" "$num" "$url" "$pending" "$([[ -n $again ]] && echo Re-review || echo Review)"
+  done < <(jq -r '.data as $d | [$d.reviewed.nodes[].url] as $seen | $d.review.nodes[] |
+    [(.repository.nameWithOwner | split("/")[1]), .number, .title[0:45], .url, .pending.totalCount,
+     (if .url | IN($seen[]) then "1" else "" end)] | @tsv' <<<"$j")
 
-  if (( new_commits )); then
-    echo "-----"
-    echo "--New commits since my review · $new_commits | $gray"
-    while IFS=$'\t' read -r r num title url delta pending; do
-      echo "--$r #$num · $title · $delta | href=$url"
-      review_actions "$a" "$r" "$num" "$url" "$pending" "Review new commits"
-    done <<<"$changed"
-  fi
-
-  orphans=$(pending_tsv "$j" "$(cut -f4 <<<"$changed")")
+  orphans=$(pending_tsv "$j")
   if [[ -n $orphans ]]; then
     echo "-----"
     echo "--Pending reviews · $(grep -c . <<<"$orphans") | $gray"

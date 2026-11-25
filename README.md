@@ -8,8 +8,8 @@ GitHub pull request skills for [Claude Code](https://claude.com/claude-code),
   Nobody else sees it until you submit it.
 - **`pr-fix`** takes the unresolved review comments on your own PR, makes the changes in a separate
   worktree and leaves them uncommitted so you can go through the diff first.
-- **A macOS menu bar** (SwiftBar, optional) that lists PRs waiting for your review, new commits on PRs
-  you already reviewed, and your own PRs, with buttons that run the above in the background.
+- **A macOS menu bar** (SwiftBar, optional) that lists PRs waiting for your review (re-requests
+  included) and your own PRs, with buttons that run the above in the background.
 
 The agent never submits a review and never pushes on its own. See [Safety](#safety).
 
@@ -166,8 +166,12 @@ The menu bar is the easier way in: every PR of yours with unresolved comments ge
 One submenu per `gh` account. A pending review gets "Submit as Approve / Comment / Request changes"
 and "Discard pending review"; both ask you to confirm first.
 
-- **Needs review**: PRs where your review is requested.
-- **New commits since my review**: PRs you reviewed that got new commits.
+- **Needs review**: PRs where your review is requested. One you reviewed before is marked
+  "re-requested" and its button is "Re-review": it checks the new commits, and the author's replies
+  on your open comments (even with no new commits, e.g. when they argue a comment is wrong). A
+  comment it concedes is tagged `[conceded]` in the review body and never brought up again, unless
+  you reply in that thread to disagree.
+  New commits alone don't list a PR again; the author re-requests your review when it's ready.
 - **Pending reviews**: PRs where you have an unsubmitted review that isn't listed above (for
   example one started by running `pr-review` on a PR by URL).
 - **My PRs**: CI state and unresolved comments, with the fix buttons.
