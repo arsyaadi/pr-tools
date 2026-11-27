@@ -65,17 +65,46 @@ would leak them. Nothing in there is committed.
 - `findings.jsonl`: one line per posted finding (nits included): `repo`, `pr`, `path`, `line`,
   `placement`, `bucket` (`issue` / `worth-a-look` / `nit`), `severity`, `kind` (`bug`, `perf`,
   `test`, `smell`, `doc`), `outcome` (`accepted`, `declined`, `partial`, `pending`), `note`, `url`,
-  `reply`. The outcome comes from the author's reply or the next incremental review, judged by hand.
+  `reply`. The outcome is the dev's response, from the author's reply or the next incremental
+  review, judged by hand. Optional, missing = null:
+  - `verdict`: `valid` / `invalid` / `debatable`, whether the finding was right. Judged by hand
+    against the code, separate from `outcome` (a dev can decline a real bug); null = unlabeled.
+  - `cause`: why an invalid or debatable one was wrong: `missed-rule`, `intended`, `no-basis`,
+    `wrong-reading`, `other`.
+  - `skill_version`: pr-tools short sha the run used.
 - `runs.jsonl`: one line per headless run: `scope`, the `angles` that ran as subagents,
-  `no_subagents`, `cost`, `denied` (Bash calls denied), `skill_version` (pr-tools commit).
+  `no_subagents`, `cost`, `denied` (Bash calls denied), `skill_version` (pr-tools commit). Optional:
+  `run_at` (ISO local seconds), `status` (the `STATUS:` line), `denied_cmds` (the denied commands).
+- `insights-<date>.md`: written by `/pr-eval`; `report.py` shows the newest one at the top.
 
-`eval/report.py` renders both into `eval/real-runs/report.html`: one offline page (no CDN) with
-headline numbers, outcome by kind and bucket, runs per skill version, and both tables.
-
-Acceptance rate is a proxy for precision, not precision itself: an author can accept a wrong nit or
-decline a right one, and missed bugs don't show up at all.
+**Precision** = `valid / (valid + invalid)` over labeled findings; `debatable` and unlabeled are
+excluded. It is reported for all findings, non-nit and nit. Acceptance (`accepted / findings`) is
+only a proxy: an author can accept a wrong nit or decline a right one, and missed bugs don't show
+up at all.
 
 ```bash
-jq -s 'group_by(.kind) | map({kind: .[0].kind, n: length, accepted: map(select(.outcome == "accepted")) | length})' eval/real-runs/findings.jsonl
-jq -s 'group_by(.skill_version) | map({v: .[0].skill_version, runs: length, no_subagents: map(select(.no_subagents)) | length, denied: map(.denied) | add})' eval/real-runs/runs.jsonl
+python3 eval/report.py [data-dir] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--version SHA] [--json]
 ```
+
+Writes `eval/real-runs/report.html` (one offline page, no CDN), or prints the metrics JSON with
+`--json` (no HTML). The filters apply to findings and runs: dates are inclusive, `--version` is a
+prefix match on `skill_version`. The terms it uses (scope, bucket, severity, kind, outcome, verdict,
+cause, angles, metrics) are defined once in `GLOSSARY` in `report.py`, shown as hover tooltips and in
+the page's Glossary section.
+
+```bash
+python3 eval/ingest-runs.py [--cache DIR] [--data DIR] [--dry-run]
+```
+
+Appends the headless Claude runs in `~/.cache/pr-review` to `runs.jsonl` (cost, angles from the
+subagent calls, denied commands, status, scope), skipping ones already logged. Each PR's log is
+overwritten by its next run, and `bin/pr-review-headless` deletes cache files older than 30 days,
+so run it regularly. `skill_version` is an approximation: the commit of this clone at the run's
+time, which assumes the installed skill is this clone.
+
+### `/pr-eval`
+
+A project skill for Claude Code, available only when you work in this repo (it isn't installed).
+It ingests the runs, finds my posted findings on the PRs, proposes `outcome`, `verdict` and `cause`
+for each (I confirm before anything is written), takes the numbers from `report.py --json`, and
+writes `insights-<date>.md` with proposed changes. Arguments: the same filters, plus PR URLs.

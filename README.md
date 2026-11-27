@@ -240,8 +240,11 @@ Before changing the skill, a checklist or an agent, check that reviews don't get
   `eval/report.py` turns them into an offline `eval/real-runs/report.html`:
 
 ```bash
-python3 eval/report.py
+python3 eval/report.py [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--version SHA]
 ```
+
+  In Claude Code, run `/pr-eval` from this repo to pull in the runs and findings, label them
+  (`valid` / `invalid` / `debatable`) and get proposed changes; it accepts the same filters.
 
 Acceptance rate on real runs is only a proxy: authors accept wrong nits, and missed bugs don't
 show up at all.
